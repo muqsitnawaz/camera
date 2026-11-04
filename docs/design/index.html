@@ -54,13 +54,16 @@ h1 { font-size: 28px; letter-spacing: -.02em; margin: 0 0 6px; }
 .preview { position: relative; width: 100%; aspect-ratio: 9 / 16; border-radius: 12px; overflow: hidden; background: #000; transition: aspect-ratio .3s; }
 .preview[data-aspect="4:5"] { aspect-ratio: 4 / 5; } .preview[data-aspect="3:4"] { aspect-ratio: 3 / 4; } .preview[data-aspect="1:1"] { aspect-ratio: 1; }
 .preview.land[data-aspect="9:16"] { aspect-ratio: 16 / 9; } .preview.land[data-aspect="4:5"] { aspect-ratio: 5 / 4; } .preview.land[data-aspect="3:4"] { aspect-ratio: 4 / 3; }
-.scene, .scene .bgl, .scene .person { position: absolute; inset: 0; }
-.scene { transition: filter .25s; }
+.scene { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; }
+.scene .bgl, .scene .person { position: absolute; inset: 0; }
+.scene { transition: filter .25s, left .3s ease, width .3s ease; }
+.scene.dragging { transition: filter .25s; }
+.preview.pans { cursor: grab; } .preview.pans.grabbing { cursor: grabbing; }
 .scene .bgl { background:
-   radial-gradient(18% 10% at 30% 30%, rgba(255,255,255,.9), rgba(255,255,255,0) 70%),
+   radial-gradient(5% 8% at 64% 24%, rgba(255,255,255,.85), rgba(255,255,255,0) 70%),
    linear-gradient(180deg, #ffb26b 0%, #ff7a6b 38%, #b0507a 62%, #3b2a5a 100%); transition: filter .25s; }
-.scene .bgl::before { content: ""; position: absolute; left: 6%; right: 58%; top: 40%; bottom: 30%; background: #2f6a4f; border-radius: 40% 40% 8% 8%; opacity: .85; }
-.scene .bgl::after { content: ""; position: absolute; right: 8%; top: 22%; width: 22%; height: 30%; border: 5px solid rgba(255,255,255,.55); border-radius: 4px; }
+.scene .bgl::before { content: ""; position: absolute; left: 4%; right: 80%; top: 40%; bottom: 0; background: #2f6a4f; border-radius: 40% 40% 8% 8%; opacity: .85; }
+.scene .bgl::after { content: ""; position: absolute; right: 6%; top: 14%; width: 20%; height: 56%; border: 5px solid rgba(255,255,255,.55); border-radius: 4px; }
 .scene .person svg { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); height: 72%; }
 .scene.blur-soft .bgl { filter: blur(5px); } .scene.blur-strong .bgl { filter: blur(11px); }
 .scene.bright-1 { filter: brightness(1.18) contrast(.97); } .scene.bright-2 { filter: brightness(1.36) contrast(.94); }
@@ -73,6 +76,12 @@ h1 { font-size: 28px; letter-spacing: -.02em; margin: 0 0 6px; }
 .glass.on { background: rgba(255,214,10,.92); color: #000; }
 .rec { display: none; } .rec.show { display: inline-flex; }
 .rec .dot { width: 8px; height: 8px; border-radius: 99px; background: #ff453a; }
+
+/* frame map: where the crop sits on the camera's whole picture */
+.framemap { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); width: 92px; aspect-ratio: 16 / 9; border-radius: 5px;
+  background: rgba(0,0,0,.45); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.5); opacity: 0; transition: opacity .25s; pointer-events: none; }
+.framemap.show { opacity: 1; }
+.framemap i { position: absolute; top: -1px; bottom: -1px; border: 1.5px solid #ffd60a; border-radius: 4px; background: rgba(255,214,10,.18); }
 
 /* effects tray over the preview */
 .tray { position: absolute; left: 8px; right: 8px; bottom: 46px; background: rgba(20,20,22,.72); backdrop-filter: blur(18px);
@@ -97,6 +106,11 @@ h1 { font-size: 28px; letter-spacing: -.02em; margin: 0 0 6px; }
 .modes button { border: 0; background: transparent; color: rgba(255,255,255,.55); cursor: pointer; padding: 2px 0; }
 .modes button.sel { color: #ffd60a; }
 .shutter-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 8px; }
+.shutter-row.grouped { grid-template-columns: 90px auto 90px; justify-content: center; column-gap: 20px; }
+.shutter:disabled { opacity: .4; cursor: not-allowed; }
+.shutter.counting i { width: 24px; height: 24px; border-radius: 6px; }
+.countdown { position: absolute; inset: 0; display: grid; place-items: center; font: 700 96px/1 ui-rounded, -apple-system, sans-serif; color: #fff;
+  text-shadow: 0 2px 16px rgba(0,0,0,.45); pointer-events: none; }
 .shutter-row .left { display: flex; gap: 2px; align-items: center; }
 .shutter-row .right { display: flex; justify-content: flex-end; }
 .shutter { width: 62px; height: 62px; border-radius: 99px; border: 3px solid rgba(255,255,255,.9); background: transparent; display: grid; place-items: center; cursor: pointer; padding: 0; }
@@ -130,6 +144,28 @@ h1 { font-size: 28px; letter-spacing: -.02em; margin: 0 0 6px; }
 .camlist button .ck { margin-left: auto; color: #ffd60a; visibility: hidden; } .camlist button.sel .ck { visibility: visible; }
 .camlist button.off { opacity: .45; }
 
+/* Open in Window, full screen */
+.wrap.wide { max-width: 1040px; }
+.stage.wide { width: 100%; }
+.titlebar { display: none; height: 26px; align-items: center; gap: 7px; padding: 0 2px 8px; font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,.75); }
+.titlebar i { width: 11px; height: 11px; border-radius: 99px; display: inline-block; }
+.popover.window { width: 100%; border-radius: 10px; background: #2d2a26; }
+.popover.window::before { display: none; }
+.popover.window .titlebar { display: flex; }
+.popover.window .preview { width: auto; height: 430px; margin: 0 auto; }
+.desktop.window { padding: 0; } .desktop.window .menubar, .desktop.window .pop-wrap { padding: 0; }
+.desktop.window .menubar { display: none; }
+
+/* page controls */
+.controls { display: flex; gap: 10px 18px; flex-wrap: wrap; align-items: center; margin-top: 18px; font-size: 13px; color: var(--muted); }
+.controls .pick { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 2px; }
+.controls .pick button { border: 0; background: transparent; padding: 5px 12px; border-radius: 99px; cursor: pointer; font-size: 13px; }
+.controls .pick button.sel { background: var(--ink); color: var(--bg); }
+.changes { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.changes li { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 13.5px; }
+.changes b { display: block; margin-bottom: 3px; }
+.changes .was { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+
 /* viewer */
 .viewer { position: absolute; inset: 0; display: none; background: #000; }
 .viewer.show { display: block; }
@@ -142,7 +178,7 @@ h1 { font-size: 28px; letter-spacing: -.02em; margin: 0 0 6px; }
 .player.show { display: flex; }
 .player .bar { flex: 1; height: 4px; background: rgba(255,255,255,.25); border-radius: 4px; position: relative; }
 .player .bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 35%; background: #fff; border-radius: 4px; }
-.toast { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); background: rgba(0,0,0,.7); color: #fff; font-size: 12px; font-weight: 600;
+.toast { position: absolute; left: 50%; top: 18%; transform: translate(-50%, -50%); background: rgba(0,0,0,.7); color: #fff; font-size: 12px; font-weight: 600;
   padding: 8px 12px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap; z-index: 8; }
 .toast.show { opacity: 1; }
 .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .35s; }
@@ -179,13 +215,19 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12.5px; }
     <button class="themebtn" id="theme" aria-label="Switch light or dark page theme">Theme: Auto</button>
   </header>
 
+  <div class="controls">
+    <span class="pick" id="pickVersion" role="group" aria-label="Version"><button data-v="today">Today</button><button data-v="proposed" class="sel">Proposed</button></span>
+    <span class="pick" id="pickWindow" role="group" aria-label="Where Camera is open"><button data-v="popover" class="sel">Popover</button><button data-v="window">Full-screen window</button></span>
+  </div>
+
   <div class="grid">
-        <div class="stage">
+        <div class="stage" id="stage">
       <div class="desktop" id="desktop">
         <div class="menubar"><span>Wi-Fi</span><span class="mbicon" title="Camera in the menu bar">
           <svg width="16" height="12" viewBox="0 0 16 12" fill="#fff"><rect x="0" y="2" width="16" height="10" rx="2.5"/><rect x="5" y="0" width="6" height="3" rx="1"/><circle cx="8" cy="7" r="3" fill="#2a2440"/></svg></span><span>Sun Oct 11 9:41 AM</span></div>
         <div class="pop-wrap">
           <div class="popover" id="pop">
+            <div class="titlebar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span style="margin-left:8px">Camera</span></div>
             <div class="preview" id="preview" data-aspect="9:16">
               <div class="scene" id="scene">
                 <div class="bgl"></div>
@@ -233,6 +275,8 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12.5px; }
                 <button class="glass icon edge r" id="nextBtn" aria-label="Older"><svg width="8" height="12" viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M1.5 1 L6.5 6 L1.5 11"/></svg></button>
                 <div class="player" id="player"><span>▶︎</span><span>0:01</span><span class="bar"><i></i></span><span>0:03</span></div>
               </div>
+              <div class="framemap" id="framemap" aria-hidden="true"><i id="framewin"></i></div>
+              <div class="countdown" id="countdown" hidden></div>
               <div class="flash" id="flash"></div>
               <div class="toast" id="toast"></div>
             </div>
@@ -245,7 +289,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12.5px; }
             </div>
 
             <div class="modes" id="modes"><button data-m="photo" class="sel">PHOTO</button><button data-m="video">VIDEO</button></div>
-            <div class="shutter-row">
+            <div class="shutter-row" id="shutterRow">
               <div class="left" id="leftCtl">
                 <button class="iconbtn" id="timerBtn" aria-label="Timer: click for on or off, right-click for 3 or 10 seconds">
                   <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="10" r="6.5"/><path d="M9 10V6.5M7 1.5h4"/></svg><span class="badge" id="timerBadge"></span>
@@ -286,6 +330,11 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12.5px; }
           </div>
         </div>
       </div>
+      <ul class="changes">
+        <li><b>Drag the picture to reframe it</b>A 9:16 crop of a landscape camera keeps a third of its width, and Turn can't change that: it turns the picture, not the camera. Drag left or right to choose which third you keep. The map shows where the crop sits on the whole picture. Double-click puts it back in the middle. The photo and the video use the same framing.<div class="was">Today: always the middle third.</div></li>
+        <li><b>Timer and folder stay beside the shutter</b>In a full-screen window the row keeps its popover width, centred under the shutter.<div class="was">Today: they move to the far edges of the window.</div></li>
+        <li><b>Click the shutter to cancel the timer</b>During a countdown the shutter shows the stop square. Click it (or press Space) and nothing is taken.<div class="was">Today: the shutter is greyed out until the countdown ends.</div></li>
+      </ul>
       <p class="caption">Interactive: everything in the popover is clickable. The picture is a drawn stand-in. In the app, drag the popover off (or right-click the menu-bar icon, Open in Window) for a resizable window that can go full screen; that menu and ⌘+ / ⌘− also set the popover's size.</p>
     </div>
 
@@ -297,7 +346,8 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12.5px; }
 (() => {
   const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const S = { mode: 'photo', aspect: '9:16', land: false, timer: 0, timerSec: 3, mic: true, viewing: null, recording: false,
-              blur: 'off', bright: '0', ring: 'off', res: 'HD', fps: '30', mirror: true, loc: false, grid: false };
+              blur: 'off', bright: '0', ring: 'off', res: 'HD', fps: '30', mirror: true, loc: false, grid: false,
+              proposed: true, window: false, pan: 0, countdown: null };
   const shots = [
     { kind: 'photo', g: 'linear-gradient(180deg,#ffb26b,#ff7a6b 40%,#b0507a 65%,#3b2a5a)', date: 'Today', time: '5:37 AM' },
     { kind: 'video', g: 'linear-gradient(180deg,#9ad0ff,#5aa0e0 45%,#2f5f8f 70%,#1d2f4f)', date: 'Today', time: '5:31 AM' },
@@ -351,12 +401,23 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12.5px; }
       $('#player').classList.toggle('show', s.kind === 'video');
     } else v.classList.remove('show');
     $('#gridlines').classList.toggle('show', S.grid && S.viewing === null);
+    $$('#pickVersion button').forEach(b => b.classList.toggle('sel', (b.dataset.v === 'proposed') === S.proposed));
+    $$('#pickWindow button').forEach(b => b.classList.toggle('sel', (b.dataset.v === 'window') === S.window));
+    $('.wrap').classList.toggle('wide', S.window); $('#stage').classList.toggle('wide', S.window);
+    $('#pop').classList.toggle('window', S.window); $('#desktop').classList.toggle('window', S.window);
+    $('#shutterRow').classList.toggle('grouped', S.proposed);
+    const counting = S.countdown !== null;
+    $('#countdown').hidden = !counting; $('#countdown').textContent = counting ? S.countdown : '';
+    sh.classList.toggle('counting', counting && S.proposed);
+    sh.disabled = counting && !S.proposed;
+    if (counting) { sh.setAttribute('aria-label', 'Cancel the timer'); $('#hint').textContent = S.proposed ? 'Click the shutter to cancel' : ''; }
+    frame();
     renderStrip();
   }
   // modes, aspects, rotate
   $$('#modes button').forEach(b => b.onclick = () => { if (S.recording) return; S.mode = b.dataset.m; render(); });
-  $$('#aspects button').forEach(b => b.onclick = () => { S.aspect = b.dataset.a; render(); });
-  $('#rotate').onclick = () => { if (S.aspect !== '1:1') { S.land = !S.land; render(); } };
+  $$('#aspects button').forEach(b => b.onclick = () => { S.aspect = b.dataset.a; render(); if (S.proposed && spare() > 1.01) showMap(1200); });
+  $('#rotate').onclick = () => { if (S.aspect !== '1:1') { S.land = !S.land; render(); if (S.proposed && spare() > 1.01) showMap(1200); } };
   // timer & mic: click toggles, right-click chooses
   $('#timerBtn').onclick = () => { S.timer = S.timer ? 0 : 1; render(); };
   $('#timerBtn').oncontextmenu = e => { e.preventDefault(); S.timerSec = S.timerSec === 3 ? 10 : 3; S.timer = 1; render(); toast(`${S.timerSec}-second timer`); };
@@ -388,7 +449,8 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12.5px; }
   $('#quitBtn').onclick = () => toast('Camera would quit here');
   $('#folderBtn').onclick = () => toast('Opens ~/Pictures/Camera in Finder');
   // shutter
-  let recTimer = null;
+  let recTimer = null, countTimer = null;
+  document.addEventListener('keydown', e => { if (e.code === 'Space' && !e.target.closest('input,textarea')) { e.preventDefault(); if (!$('#shutter').disabled) $('#shutter').click(); } });
   $('#shutter').onclick = () => {
     if (S.viewing !== null) { S.viewing = null; render(); toast('Back to the camera'); return; }
     if (S.mode === 'video') {
@@ -396,9 +458,18 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12.5px; }
       if (S.recording) { let t = 0; $('#recTime').textContent = '00:00'; recTimer = setInterval(() => { t++; $('#recTime').textContent = `00:${String(t).padStart(2, '0')}`; }, 1000); }
       render(); return;
     }
+    if (S.countdown !== null) { clearInterval(countTimer); S.countdown = null; render(); toast('Timer cancelled'); return; }
+    if (S.timer) {
+      S.countdown = S.timerSec; render();
+      countTimer = setInterval(() => { S.countdown--; if (S.countdown > 0) { render(); return; } clearInterval(countTimer); S.countdown = null; snap(); }, 1000);
+      return;
+    }
+    snap();
+  };
+  function snap() {
     const f = $('#flash'); f.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('on')));
     shots.unshift({ kind: 'photo', g: 'linear-gradient(180deg,#ffb26b,#ff7a6b 40%,#b0507a 65%,#3b2a5a)', date: 'Today', time: '9:41 AM' }); render();
-  };
+  }
   // viewer
   $('#backBtn').onclick = () => { S.viewing = null; render(); };
   $('#prevBtn').onclick = () => { if (S.viewing > 0) { S.viewing--; render(); } };
@@ -408,6 +479,32 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12.5px; }
   $('#viewImg').ondblclick = () => toast(shots[S.viewing].kind === 'video' ? 'Opens in QuickTime Player' : 'Opens in Preview');
   // mic meter animation
   setInterval(() => { const m = $('#meterFill'); if (m) m.style.height = (18 + Math.random() * 62) + '%'; }, 110);
+  // framing: the camera sends 16:9; a narrower crop can slide along the width
+  const SENSOR = 16 / 9;
+  function previewRatio() { const [a, b] = S.aspect.split(':').map(Number); return S.land && a !== b ? b / a : a / b; }
+  function spare() { return SENSOR / previewRatio(); }   // scene width / preview width
+  function frame() {
+    const w = Math.max(spare(), 1) * 100, sc = $('#scene');
+    const pan = S.proposed ? S.pan : 0;
+    sc.style.width = w + '%'; sc.style.left = ((100 - w) * (pan + 1) / 2) + '%';
+    $('#preview').classList.toggle('pans', S.proposed && w > 100.5 && S.viewing === null);
+    const win = $('#framewin'), share = 1 / Math.max(SENSOR / previewRatio(), 1);
+    win.style.width = (share * 100) + '%'; win.style.left = ((1 - share) * (pan + 1) / 2 * 100) + '%';
+  }
+  function showMap(ms) { const m = $('#framemap'); m.classList.add('show'); clearTimeout(showMap.h); if (ms) showMap.h = setTimeout(() => m.classList.remove('show'), ms); }
+  const pv = $('#preview');
+  pv.addEventListener('pointerdown', e => {
+    if (!pv.classList.contains('pans') || e.target.closest('button,.tray,.sheet,.viewer')) return;
+    const x0 = e.clientX, p0 = S.pan, room = (spare() - 1) * pv.clientWidth;
+    pv.setPointerCapture(e.pointerId); pv.classList.add('grabbing'); $('#scene').classList.add('dragging'); showMap();
+    const move = ev => { S.pan = Math.max(-1, Math.min(1, p0 - 2 * (ev.clientX - x0) / room)); frame(); };
+    const up = () => { pv.removeEventListener('pointermove', move); pv.classList.remove('grabbing'); $('#scene').classList.remove('dragging'); showMap(900); };
+    pv.addEventListener('pointermove', move); pv.addEventListener('pointerup', up, { once: true }); pv.addEventListener('pointercancel', up, { once: true });
+  });
+  pv.addEventListener('dblclick', e => { if (!pv.classList.contains('pans') || e.target.closest('button,.tray,.sheet,.viewer')) return; S.pan = 0; frame(); showMap(900); });
+  $$('#pickVersion button').forEach(b => b.onclick = () => { S.proposed = b.dataset.v === 'proposed'; render(); });
+  $$('#pickWindow button').forEach(b => b.onclick = () => { S.window = b.dataset.v === 'window'; render(); });
+
   // page theme
   const themes = ['auto', 'light', 'dark']; let ti = 0;
   try { const saved = localStorage.getItem('camera-redesign-theme'); if (saved) ti = Math.max(0, themes.indexOf(saved)); } catch (e) {}
