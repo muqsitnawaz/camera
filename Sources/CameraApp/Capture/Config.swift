@@ -82,6 +82,8 @@ struct Config: Equatable, Codable {
     var saveLocation = false
     /// Rule-of-thirds lines over the preview; never in a saved file.
     var grid = false
+    /// Where the crop sits along the side of the picture it doesn't fill: -1 is the left or top, 1 the right or bottom.
+    var framing = 0.0
 
     /// Only a video records sound, so a photo never opens the microphone.
     var recordsSound: Bool { mode == .video && micOn }
@@ -100,6 +102,21 @@ struct Config: Equatable, Codable {
         let w = CGFloat(width), h = CGFloat(height)
         let crop = w / h > ratio ? CGSize(width: h * ratio, height: h) : CGSize(width: w, height: w / ratio)
         return Int(min(crop.width, crop.height))
+    }
+
+    /// The region of an upright `extent` an output of `ratio` is cut from, slid along the spare side by `framing`.
+    /// `extent` is in Core Image space, where y grows upward.
+    static func crop(_ extent: CGRect, ratio: CGFloat, framing: Double) -> CGRect {
+        let along = CGFloat(min(max(framing, -1), 1) + 1) / 2
+        var crop = extent
+        if extent.width / extent.height > ratio {
+            crop.size.width = extent.height * ratio
+            crop.origin.x = extent.minX + (extent.width - crop.width) * along
+        } else {
+            crop.size.height = extent.width / ratio
+            crop.origin.y = extent.minY + (extent.height - crop.height) * (1 - along)
+        }
+        return crop
     }
 
     init() {}
@@ -121,6 +138,7 @@ struct Config: Equatable, Codable {
         if let v = try? c.decodeIfPresent(Brighten.self, forKey: .brighten) { brighten = v }
         if let v = try? c.decodeIfPresent(Bool.self, forKey: .saveLocation) { saveLocation = v }
         if let v = try? c.decodeIfPresent(Bool.self, forKey: .grid) { grid = v }
+        if let v = try? c.decodeIfPresent(Double.self, forKey: .framing) { framing = v }
     }
 
     static func load() -> Config {

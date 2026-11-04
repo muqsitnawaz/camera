@@ -32,7 +32,10 @@ Each of these fixed a real bug. Keep them when changing the code.
 - **One buffer for everything.** Each frame is mirrored, then rotated, then cropped and scaled
   once (`render`), then the background blur and brightening are applied. The person mask comes
   from the upright, cropped picture. The preview, the recording and photos all use that buffer,
-  so what you see is what is saved.
+  so what you see is what is saved. The crop slides along the side it doesn't fill by
+  `Config.framing` (`Config.crop`, shared with the drag and its map); scripted runs centre it.
+  Dragging applies many times a second, so `apply()` sets the camera's format again only when it
+  changes.
 - **Frame duration is clamped to the format's range.** An out-of-range duration raises an
   Objective-C exception Swift can't catch (this crashed on the Cam Link 4K). Set the format and
   durations again after `startRunning()` and after the mic joins, because both reset them.

@@ -22,6 +22,11 @@ struct ContentView: View {
     @State private var countdown: Int?
     @State private var flash = false
     @State private var countdownTask: Task<Void, Never>?
+    /// The framing when a drag on the picture began.
+    @State private var dragFraming: Double?
+    @State private var mapShown = false
+    @State private var mapHide: Task<Void, Never>?
+    @State private var previewPoints = CGSize.zero
     /// A capture shown in place of the live picture.
     @State private var viewing: URL?
 
@@ -60,10 +65,7 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.25), value: camera.config.ratio)
         .animation(.easeInOut(duration: 0.25), value: popoverSize)
         // Closing the popover stops the camera; a countdown must not fire into a stopped camera.
-        .onDisappear {
-            countdownTask?.cancel()
-            countdown = nil
-        }
+        .onDisappear { cancelCountdown() }
         .onChange(of: shownRingLight, initial: true) { RingLight.show(shownRingLight, on: ringLightScreens) }
         .onChange(of: ringLightDisplays) { RingLight.show(shownRingLight, on: ringLightScreens) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
@@ -126,7 +128,19 @@ struct ContentView: View {
             } else {
                 previewOverlays
             }
+            if mapShown, let (source, crop) = reframable {
+                FrameMap(source: source, crop: crop)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 46)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
         }
+        .background(GeometryReader { g in Color.clear.onAppear { previewPoints = g.size }.onChange(of: g.size) { previewPoints = g.size } })
+        .gesture(reframe, including: reframable == nil ? .subviews : .all)
+        .gesture(TapGesture(count: 2).onEnded { camera.config.framing = 0; showMap(for: 0.9) }, including: reframable == nil ? .subviews : .all)
+        .help(reframable == nil ? "" : "Drag to reframe · double-click to centre")
+        .onChange(of: camera.config.ratio) { if reframable != nil { showMap(for: 1.2) } }
         .frame(width: inWindow ? nil : previewSize.width, height: inWindow ? nil : previewSize.height)
         .aspectRatio(inWindow ? camera.config.ratio : nil, contentMode: .fit)
         .background(.black)
@@ -188,6 +202,46 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.2), value: overlay)
     }
 
+    /// The camera's upright picture and the part of it the crop keeps, when the crop leaves some of it out.
+    private var reframable: (source: CGSize, crop: CGRect)? {
+        let source = camera.mode.source
+        guard viewing == nil, camera.feed == .live, source.width > 0, source.height > 0 else { return nil }
+        let crop = Config.crop(CGRect(origin: .zero, size: source), ratio: camera.config.ratio, framing: camera.config.framing)
+        return crop.width < source.width * 0.99 || crop.height < source.height * 0.99 ? (source, crop) : nil
+    }
+
+    /// Dragging the picture slides the crop over the camera's whole picture, following the hand.
+    private var reframe: some Gesture {
+        DragGesture()
+            .onChanged { drag in
+                guard let (source, crop) = reframable else { return }
+                let start = dragFraming ?? camera.config.framing
+                dragFraming = start
+                let horizontal = crop.width < source.width
+                let room = horizontal ? previewPoints.width * (source.width / crop.width - 1)
+                                      : previewPoints.height * (source.height / crop.height - 1)
+                guard room > 0 else { return }
+                let moved = horizontal ? drag.translation.width : drag.translation.height
+                camera.config.framing = min(max(start - 2 * moved / room, -1), 1)
+                mapHide?.cancel()
+                withAnimation(.easeOut(duration: 0.15)) { mapShown = true }
+            }
+            .onEnded { _ in
+                dragFraming = nil
+                showMap(for: 0.9)
+            }
+    }
+
+    private func showMap(for seconds: Double) {
+        mapHide?.cancel()
+        withAnimation(.easeOut(duration: 0.15)) { mapShown = true }
+        mapHide = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.25)) { mapShown = false }
+        }
+    }
+
     private var effectsOn: Bool { camera.config.blur != .off || camera.config.brighten != .off || ringLight != .off }
 
     private func toggle(_ shown: Overlay) { overlay = overlay == shown ? nil : shown }
@@ -209,18 +263,17 @@ struct ContentView: View {
         .disabled(camera.isRecording || countdown != nil)
     }
 
+    /// The same width at any window size, so the controls stay beside the shutter.
     private var shutterRow: some View {
-        HStack {
+        HStack(spacing: 20) {
             HStack(spacing: 10) {
                 timerButton
                 if mode == .video { mic }
             }
             .frame(width: 90, alignment: .leading)
-            Spacer()
-            ShutterButton(mode: mode, recording: camera.isRecording, returnsToCamera: viewing != nil, action: shutter)
+            ShutterButton(mode: mode, recording: camera.isRecording, returnsToCamera: viewing != nil, counting: countdown != nil, action: shutter)
                 .keyboardShortcut(.space, modifiers: [])
-                .disabled(camera.access != .granted || countdown != nil)
-            Spacer()
+                .disabled(camera.access != .granted)
             Button { NSWorkspace.shared.open(Library.folder) } label: {
                 Image(systemName: "folder")
             }
@@ -299,6 +352,12 @@ struct ContentView: View {
 
     // MARK: Actions
 
+    private func cancelCountdown() {
+        countdownTask?.cancel()
+        countdownTask = nil
+        withAnimation { countdown = nil }
+    }
+
     /// The strip is newest first.
     private func step(_ by: Int) {
         guard let viewing, let i = library.items.firstIndex(of: viewing) else { return }
@@ -308,6 +367,10 @@ struct ContentView: View {
 
     private func shutter() {
         overlay = nil
+        if countdown != nil {
+            cancelCountdown()
+            return
+        }
         if viewing != nil {
             viewing = nil
             return
@@ -321,10 +384,9 @@ struct ContentView: View {
             if timerOn {
                 for n in stride(from: timerSeconds, through: 1, by: -1) {
                     withAnimation(.spring(duration: 0.3)) { countdown = n }
-                    try? await Task.sleep(for: .seconds(1))
+                    do { try await Task.sleep(for: .seconds(1)) } catch { return }  // cancelled
                 }
                 withAnimation { countdown = nil }
-                guard !Task.isCancelled else { return }
             }
             if mode == .photo {
                 flash = true
