@@ -60,8 +60,9 @@ extension AppDelegate {
         if let brighten = option("--brighten", "more or most", { Brighten(rawValue: $0).flatMap { $0 == .off ? nil : $0 } }) {
             camera.config.brighten = brighten
         }
-        // No location prompt in a script.
+        // No location prompt in a script, and the centred crop SKILL.md promises.
         camera.config.saveLocation = false
+        camera.config.framing = 0
         camera.config.mode = photo ? .photo : .video
 
         func finish(_ url: URL?) {

@@ -12,6 +12,8 @@ struct CameraMode: Equatable {
     var rate: FrameRate = .f30
     /// Real camera pixels on the short side behind the current aspect; larger outputs are upscaled.
     var nativeShort = 0
+    /// The camera's picture once turned upright, before the crop.
+    var source = CGSize.zero
 }
 
 /// The capture session and the one render path whose buffer feeds the preview, recordings and photos.
@@ -63,6 +65,7 @@ final class Camera: NSObject, ObservableObject {
     // Frame queue state.
     private struct Render: Equatable {
         var deviceID: String?; var size: CGSize; var mirrored: Bool; var rotation: Int
+        var framing = 0.0
         /// The camera has no saved turn yet, so frames are checked for a face on its side.
         var findsMount = false
         /// Stops of exposure added, and the background blur radius in output pixels; 0 is off.
@@ -191,6 +194,7 @@ final class Camera: NSObject, ObservableObject {
         let config = config
         let device = devices.first { $0.uniqueID == config.deviceID }
         let render = Render(deviceID: device?.uniqueID, size: config.outputSize, mirrored: config.mirrored, rotation: rotation,
+                            framing: config.framing,
                             findsMount: persists && mountKey.map { config.rotations[$0] == nil } == true,
                             exposure: config.brighten.stops, blur: config.blur.radius * Double(config.resolution.rawValue) / 1080)
         updateMic()
@@ -237,9 +241,13 @@ final class Camera: NSObject, ObservableObject {
         }
         // A duration outside the range is an uncatchable exception (Cam Link 4K's 30 fps isn't exactly 1/30).
         let duration = min(max(rate.frameDuration, range.minFrameDuration), range.maxFrameDuration)
-        mode = CameraMode(supportedRates: rates, rate: rate, nativeShort: score(format).0)
+        let d = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        mode = CameraMode(supportedRates: rates, rate: rate, nativeShort: score(format).0,
+                          source: sideways ? CGSize(width: Int(d.height), height: Int(d.width)) : CGSize(width: Int(d.width), height: Int(d.height)))
         sessionQueue.async {
             self.setCamera(device)
+            // Only a new mode is set again: dragging the framing applies many times a second.
+            guard self.appliedMode.map({ $0.device != device || $0.format != format || $0.duration != duration }) ?? true else { return }
             self.appliedMode = (device, format, duration)
             self.applyMode()
         }
@@ -589,16 +597,7 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
             }
             image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
 
-            let extent = image.extent
-            let ratio = size.width / size.height
-            var crop = extent
-            if extent.width / extent.height > ratio {
-                crop.size.width = extent.height * ratio
-                crop.origin.x = extent.midX - crop.width / 2
-            } else {
-                crop.size.height = extent.width / ratio
-                crop.origin.y = extent.midY - crop.height / 2
-            }
+            let crop = Config.crop(image.extent, ratio: size.width / size.height, framing: s.framing)
             let scale = size.width / crop.width
             return image.cropped(to: crop)
                 .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))

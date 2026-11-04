@@ -6,22 +6,25 @@ struct ShutterButton: View {
     let recording: Bool
     /// While a capture is shown, the shutter only brings the live picture back.
     let returnsToCamera: Bool
+    /// During a timer's countdown the shutter cancels it.
+    var counting = false
     let action: () -> Void
 
     var body: some View {
+        let stops = recording || counting
         Button(action: action) {
             ZStack {
                 Circle().strokeBorder(.primary.opacity(0.8), lineWidth: 3).frame(width: 56, height: 56)
-                RoundedRectangle(cornerRadius: recording ? 5 : 23)
+                RoundedRectangle(cornerRadius: stops ? 5 : 23)
                     .fill(returnsToCamera ? Color.gray.opacity(0.5) : mode == .photo ? Color.white : Color.red)
-                    .frame(width: recording ? 22 : 46, height: recording ? 22 : 46)
+                    .frame(width: stops ? 22 : 46, height: stops ? 22 : 46)
                     .shadow(color: .black.opacity(0.2), radius: 1)
             }
             .contentShape(Circle())
-            .animation(.spring(duration: 0.25), value: recording)
+            .animation(.spring(duration: 0.25), value: stops)
         }
         .buttonStyle(.plain)
-        .help(returnsToCamera ? "Back to the camera (Space)"
+        .help(returnsToCamera ? "Back to the camera (Space)" : counting ? "Cancel the timer (Space)"
               : mode == .photo ? "Take photo (Space)" : recording ? "Stop recording (Space)" : "Start recording (Space)")
     }
 }
@@ -131,6 +134,30 @@ struct PreviewView: NSViewRepresentable {
 }
 
 /// Rule-of-thirds lines over the preview.
+/// Where the crop sits on the camera's whole picture, shown while it is dragged.
+struct FrameMap: View {
+    let source: CGSize
+    /// In Core Image space, where y grows upward.
+    let crop: CGRect
+
+    var body: some View {
+        let scale = 92 / max(source.width, source.height)
+        let window = CGRect(x: crop.minX * scale, y: (source.height - crop.maxY) * scale,
+                            width: crop.width * scale, height: crop.height * scale)
+        RoundedRectangle(cornerRadius: 5)
+            .fill(.black.opacity(0.45))
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.white.opacity(0.5), lineWidth: 1))
+            .overlay(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.yellow.opacity(0.18))
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.yellow, lineWidth: 1.5))
+                    .frame(width: window.width, height: window.height)
+                    .offset(x: window.minX, y: window.minY)
+            }
+            .frame(width: source.width * scale, height: source.height * scale)
+    }
+}
+
 struct ThirdsGrid: View {
     var body: some View {
         Canvas { context, size in

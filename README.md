@@ -39,6 +39,9 @@ control in its popover is clickable.
   mute; right-click it to pick a microphone.
 - **Orientation.** The rotate button (or R) turns the frame on its side: 9:16 becomes 16:9, 4:5
   becomes 5:4.
+- **Reframing.** A 9:16 crop of a landscape camera keeps a third of its width. Drag the picture to
+  choose which third: a small map shows where the crop sits, and double-click centres it again.
+  Photos and videos are framed the same way.
 - **A camera mounted sideways.** The first time a camera sees a face, Camera turns its picture
   upright on its own. The turn button at the preview's corner turns it a further 90°; right-click
   it to pick one. The turn is remembered per camera, whichever USB port it is plugged into.
@@ -50,7 +53,8 @@ control in its popover is clickable.
   camera's real pixels says it is upscaled. Grid draws rule-of-thirds lines over the preview,
   never into a file. Location writes where a capture was taken into the
   file, and is off until you turn it on. Quit is here too.
-- **Timer.** Click for a countdown; right-click for 3 or 10 seconds.
+- **Timer.** Click for a countdown; right-click for 3 or 10 seconds. Click the shutter (or press
+  Space) during the countdown to cancel it.
 - **Viewing.** Click a capture in the strip to see it in place; double-click to open it in Preview
   or QuickTime. The shutter takes you back to the camera.
 - **Searchable files.** Captures go to `~/Pictures/Camera`, named with the camera, aspect,
