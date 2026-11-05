@@ -22,8 +22,8 @@ struct ContentView: View {
     @State private var countdown: Int?
     @State private var flash = false
     @State private var countdownTask: Task<Void, Never>?
-    /// The framing when a drag on the picture began.
-    @State private var dragFraming: Double?
+    /// The framing when a drag on the picture began; nil again when it ends or is cancelled.
+    @GestureState private var dragFraming: Double?
     @State private var mapShown = false
     @State private var mapHide: Task<Void, Never>?
     @State private var previewPoints = CGSize.zero
@@ -141,6 +141,7 @@ struct ContentView: View {
         .gesture(TapGesture(count: 2).onEnded { camera.config.framing = 0; showMap(for: 0.9) }, including: reframable == nil ? .subviews : .all)
         .help(reframable == nil ? "" : "Drag to reframe · double-click to centre")
         .onChange(of: camera.config.ratio) { if reframable != nil { showMap(for: 1.2) } }
+        .onChange(of: dragFraming == nil) { _, ended in if ended { showMap(for: 0.9) } }
         .frame(width: inWindow ? nil : previewSize.width, height: inWindow ? nil : previewSize.height)
         .aspectRatio(inWindow ? camera.config.ratio : nil, contentMode: .fit)
         .background(.black)
@@ -213,7 +214,7 @@ struct ContentView: View {
     /// Dragging the picture slides the crop over the camera's whole picture, following the hand.
     private var reframe: some Gesture {
         DragGesture()
-            .onChanged { drag in
+            .updating($dragFraming) { drag, dragFraming, _ in
                 guard let (source, crop) = reframable else { return }
                 let start = dragFraming ?? camera.config.framing
                 dragFraming = start
@@ -225,10 +226,6 @@ struct ContentView: View {
                 camera.config.framing = min(max(start - 2 * moved / room, -1), 1)
                 mapHide?.cancel()
                 withAnimation(.easeOut(duration: 0.15)) { mapShown = true }
-            }
-            .onEnded { _ in
-                dragFraming = nil
-                showMap(for: 0.9)
             }
     }
 
@@ -384,7 +381,9 @@ struct ContentView: View {
             if timerOn {
                 for n in stride(from: timerSeconds, through: 1, by: -1) {
                     withAnimation(.spring(duration: 0.3)) { countdown = n }
-                    do { try await Task.sleep(for: .seconds(1)) } catch { return }  // cancelled
+                    try? await Task.sleep(for: .seconds(1))
+                    // A cancel can land after the sleep ends but before this resumes.
+                    guard !Task.isCancelled else { return }
                 }
                 withAnimation { countdown = nil }
             }

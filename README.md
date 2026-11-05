@@ -41,7 +41,7 @@ control in its popover is clickable.
   becomes 5:4.
 - **Reframing.** A 9:16 crop of a landscape camera keeps a third of its width. Drag the picture to
   choose which third: a small map shows where the crop sits, and double-click centres it again.
-  Photos and videos are framed the same way.
+  Photos and videos are framed the same way, and a drag while recording pans the video.
 - **A camera mounted sideways.** The first time a camera sees a face, Camera turns its picture
   upright on its own. The turn button at the preview's corner turns it a further 90°; right-click
   it to pick one. The turn is remembered per camera, whichever USB port it is plugged into.
