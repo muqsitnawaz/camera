@@ -133,7 +133,6 @@ struct PreviewView: NSViewRepresentable {
     }
 }
 
-/// Rule-of-thirds lines over the preview.
 /// Where the crop sits on the camera's whole picture, shown while it is dragged.
 struct FrameMap: View {
     let source: CGSize
@@ -158,6 +157,7 @@ struct FrameMap: View {
     }
 }
 
+/// Rule-of-thirds lines over the preview.
 struct ThirdsGrid: View {
     var body: some View {
         Canvas { context, size in
