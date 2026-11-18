@@ -636,6 +636,10 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
         CVPixelBufferPoolCreatePixelBuffer(nil, pool, &out)
         guard let out else { return nil }
         ciContext.render(image, to: out, bounds: CGRect(origin: .zero, size: size), colorSpace: colorSpace)
+        // Untagged, the preview layer shows these bytes in each display's own colors, oversaturated and banded.
+        CVBufferSetAttachment(out, kCVImageBufferCGColorSpaceKey, colorSpace, .shouldPropagate)
+        CVBufferSetAttachment(out, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
+        CVBufferSetAttachment(out, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_sRGB, .shouldPropagate)
         return out
     }
 
