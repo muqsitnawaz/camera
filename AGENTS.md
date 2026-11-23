@@ -15,7 +15,7 @@ by `scripts/build.sh` (no Xcode project). To *use* the app from an agent, read
 | `Sources/CameraApp/Capture/Recorder.swift` | Writing the H.264/AAC `.mp4` |
 | `Sources/CameraApp/Capture/Library.swift` | `~/Pictures/Camera`: file names, the recent-captures list |
 | `Sources/CameraApp/Capture/Location.swift` | Location for the Location setting, and its EXIF and ISO 6709 forms |
-| `Sources/CameraApp/UI/ContentView.swift` | The popover: preview and its overlays, aspect and mode, shutter row, strip |
+| `Sources/CameraApp/UI/ContentView.swift` | The popover: preview and its overlays, aspect and mode, shutter row with the last capture |
 | `Sources/CameraApp/UI/Controls.swift` | The camera menu, aspect picker, Camera Settings panel and effects tray |
 | `Sources/CameraApp/UI/CaptureViewer.swift` | Viewing a photo or playing a video in place, laid out like Photos |
 | `Sources/CameraApp/UI/Components.swift` | Shutter, level meter, recording badge, thumbnail, preview layer |

@@ -56,7 +56,6 @@ struct ContentView: View {
                 .disabled(camera.isRecording || viewing != nil)
             modePicker
             shutterRow
-            if !library.items.isEmpty { strip }
         }
         .padding(14)
         .frame(width: inWindow ? nil : max(previewSize.width, 300) + 28)
@@ -124,7 +123,7 @@ struct ContentView: View {
             }
             Color.white.opacity(flash ? 1 : 0).allowsHitTesting(false)
             if let viewing {
-                CaptureViewer(url: viewing, library: library, close: { self.viewing = nil }, step: step)
+                CaptureViewer(url: viewing, close: { self.viewing = nil }, step: step, trash: { trash(viewing) })
             } else {
                 previewOverlays
             }
@@ -271,11 +270,7 @@ struct ContentView: View {
             ShutterButton(mode: mode, recording: camera.isRecording, returnsToCamera: viewing != nil, counting: countdown != nil, action: shutter)
                 .keyboardShortcut(.space, modifiers: [])
                 .disabled(camera.access != .granted)
-            Button { NSWorkspace.shared.open(Library.folder) } label: {
-                Image(systemName: "folder")
-            }
-            .help("Open the Camera folder in Finder")
-            .frame(width: 90, alignment: .trailing)
+            lastShot.frame(width: 90, alignment: .trailing)
         }
         .buttonStyle(.borderless)
         .imageScale(.large)
@@ -322,29 +317,27 @@ struct ContentView: View {
         .disabled(camera.isRecording)
     }
 
-    private var strip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(library.items, id: \.self) { url in
-                    Thumbnail(url: url)
-                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.yellow, lineWidth: viewing == url ? 2 : 0))
-                        .onTapGesture(count: 2) { NSWorkspace.shared.open(url) }
-                        .onTapGesture { viewing = url; overlay = nil }
-                        .onDrag { NSItemProvider(contentsOf: url) ?? NSItemProvider() }
-                        .contextMenu {
-                            ShareLink("Share…", item: url)
-                            Button("Copy") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.writeObjects([url as NSURL])
-                            }
-                            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                            Divider()
-                            Button("Move to Trash") { library.trash(url) }
-                        }
+    /// The newest capture, the way the iPhone Camera app shows it; the viewer steps through the rest.
+    @ViewBuilder private var lastShot: some View {
+        if let url = library.items.first {
+            Thumbnail(url: url)
+                .onTapGesture(count: 2) { NSWorkspace.shared.open(url) }
+                .onTapGesture { viewing = url; overlay = nil }
+                .onDrag { NSItemProvider(contentsOf: url) ?? NSItemProvider() }
+                .contextMenu {
+                    ShareLink("Share…", item: url)
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.writeObjects([url as NSURL])
+                    }
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    Divider()
+                    Button("Move to Trash") { library.trash(url) }
                 }
-            }
+        } else {
+            Button { NSWorkspace.shared.open(Library.folder) } label: { Image(systemName: "folder") }
+                .help("Open the Camera folder in Finder")
         }
-        .frame(height: 48)
     }
 
     // MARK: Actions
@@ -355,11 +348,19 @@ struct ContentView: View {
         withAnimation { countdown = nil }
     }
 
-    /// The strip is newest first.
+    /// Captures are newest first.
     private func step(_ by: Int) {
         guard let viewing, let i = library.items.firstIndex(of: viewing) else { return }
         let j = i + by
         if library.items.indices.contains(j) { self.viewing = library.items[j] }
+    }
+
+    /// Trashing in the viewer moves on to the next older capture, or the newer one at the end.
+    private func trash(_ url: URL) {
+        let items = library.items
+        let next = items.firstIndex(of: url).flatMap { i in items.indices.contains(i + 1) ? items[i + 1] : i > 0 ? items[i - 1] : nil }
+        library.trash(url)
+        viewing = next
     }
 
     private func shutter() {

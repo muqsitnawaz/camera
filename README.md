@@ -10,7 +10,7 @@ The camera app macOS never shipped. It lives in your menu bar: click the icon fo
 preview, then take a photo or record a video in 9:16, 4:5, 3:4 or 1:1, at 720p to 4K and 23.98,
 24, 30 or 60 fps.
 
-<p align="center"><img src="docs/preview.png" width="600" alt="Camera's popover under the menu bar: a 9:16 live preview with the camera's name and the HD badge on top, the effects button at its corner, the aspect picker, PHOTO and VIDEO, the timer, shutter and folder, and recent captures"></p>
+<p align="center"><img src="docs/preview.png" width="600" alt="Camera's popover under the menu bar: a 9:16 live preview with the camera's name and the HD badge on top, the effects button at its corner, the aspect picker, PHOTO and VIDEO, the timer, the shutter and the last capture"></p>
 
 Download the latest signed and notarized app from
 [Releases](https://github.com/muqsitnawaz/camera/releases/latest), unzip it and move it to
@@ -55,11 +55,12 @@ control in its popover is clickable.
   file, and is off until you turn it on. Quit is here too.
 - **Timer.** Click for a countdown; right-click for 3 or 10 seconds. Click the shutter (or press
   Space) during the countdown to cancel it.
-- **Viewing.** Click a capture in the strip to see it in place; double-click to open it in Preview
-  or QuickTime. The shutter takes you back to the camera.
+- **Viewing.** The last capture sits beside the shutter. Click it to see it in place, then step
+  through older ones with the arrows or ← and →; double-click to open it in Preview or QuickTime.
+  The shutter takes you back to the camera.
 - **Searchable files.** Captures go to `~/Pictures/Camera`, named with the camera, aspect,
   resolution and frame rate: `Camera 2026-10-11 01.18.09 cam-link-4k 9x16 1080p 30fps.mp4`.
-  The folder button opens it.
+  The folder button in the viewer shows a capture there.
 
 Video is H.264 with AAC sound in an `.mp4`; photos are JPEG. Drag the popover off the menu bar to
 keep it open as a window.

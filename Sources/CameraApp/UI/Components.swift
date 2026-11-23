@@ -83,8 +83,9 @@ struct Thumbnail: View {
                     Color.secondary.opacity(0.2)
                 }
             }
-            .frame(width: 48, height: 48)
+            .frame(width: 40, height: 40)
             .clipShape(RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.white.opacity(0.85), lineWidth: 1.5))
             if url.pathExtension.lowercased() == "mp4" {
                 Image(systemName: "video.fill")
                     .font(.system(size: 9))
@@ -94,7 +95,7 @@ struct Thumbnail: View {
             }
         }
         .help(url.lastPathComponent)
-        .task(id: url) { image = await Library.thumbnail(for: url, size: 96) }
+        .task(id: url) { image = await Library.thumbnail(for: url, size: 80) }
     }
 }
 
