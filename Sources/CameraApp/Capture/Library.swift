@@ -1,7 +1,7 @@
 import AppKit
 import QuickLookThumbnailing
 
-/// Photos and videos live in ~/Pictures/Camera; the strip shows the newest ones.
+/// Photos and videos live in ~/Pictures/Camera; the viewer steps through the newest ones.
 final class Library: ObservableObject {
     static let folder: URL = {
         let pictures = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0]

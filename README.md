@@ -56,7 +56,7 @@ control in its popover is clickable.
 - **Timer.** Click for a countdown; right-click for 3 or 10 seconds. Click the shutter (or press
   Space) during the countdown to cancel it.
 - **Viewing.** The last capture sits beside the shutter. Click it to see it in place, then step
-  through older ones with the arrows or ← and →; double-click to open it in Preview or QuickTime.
+  through older ones with ← and →; double-click to open it in Preview or QuickTime.
   The shutter takes you back to the camera.
 - **Searchable files.** Captures go to `~/Pictures/Camera`, named with the camera, aspect,
   resolution and frame rate: `Camera 2026-10-11 01.18.09 cam-link-4k 9x16 1080p 30fps.mp4`.

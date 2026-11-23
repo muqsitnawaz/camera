@@ -332,7 +332,7 @@ struct ContentView: View {
                     }
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                     Divider()
-                    Button("Move to Trash") { library.trash(url) }
+                    Button("Move to Trash") { trash(url) }
                 }
         } else {
             Button { NSWorkspace.shared.open(Library.folder) } label: { Image(systemName: "folder") }
@@ -355,12 +355,12 @@ struct ContentView: View {
         if library.items.indices.contains(j) { self.viewing = library.items[j] }
     }
 
-    /// Trashing in the viewer moves on to the next older capture, or the newer one at the end.
+    /// Trashing what the viewer shows moves on to the next older capture, or the newer one at the end.
     private func trash(_ url: URL) {
         let items = library.items
         let next = items.firstIndex(of: url).flatMap { i in items.indices.contains(i + 1) ? items[i + 1] : i > 0 ? items[i - 1] : nil }
         library.trash(url)
-        viewing = next
+        if viewing == url { viewing = next }
     }
 
     private func shutter() {
