@@ -4,9 +4,9 @@ import SwiftUI
 /// A photo or video shown in place of the live picture, laid out like Photos.
 struct CaptureViewer: View {
     let url: URL
-    @ObservedObject var library: Library
     let close: () -> Void
     let step: (Int) -> Void
+    let trash: () -> Void
     @State private var player: AVPlayer?
     @State private var image: NSImage?
 
@@ -71,10 +71,10 @@ struct CaptureViewer: View {
                 ShareLink(item: url) { circle("square.and.arrow.up") }
                     .buttonStyle(.plain)
                     .help("Share")
-                Button {
-                    library.trash(url)
-                    close()
-                } label: { circle("trash") }
+                Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: { circle("folder") }
+                    .buttonStyle(.plain)
+                    .help("Show in Finder")
+                Button(action: trash) { circle("trash") }
                 .buttonStyle(.plain)
                 .help("Move to Trash")
             }
