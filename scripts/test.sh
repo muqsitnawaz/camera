@@ -36,6 +36,7 @@ for fps in 24 30; do
   measured=$(awk -v n="${frames:-0}" -v d="${seconds:-1}" 'BEGIN { printf "%d", n / d + 0.5 }')
   check "video frame rate at $fps fps" "$measured" "$fps"
   check "video has audio at $fps fps" "$(ffprobe -v error -select_streams a -show_entries stream=codec_name -of csv=p=0 "$f" 2>/dev/null)" "aac"
+  check "video color tags at $fps fps" "$(ffprobe -v error -select_streams v -show_entries stream=color_space,color_transfer,color_primaries -of csv=p=0 "$f" 2>/dev/null)" "bt709,iec61966-2-1,bt709"
 done
 
 exit $fail
