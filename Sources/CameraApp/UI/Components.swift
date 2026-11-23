@@ -85,7 +85,8 @@ struct Thumbnail: View {
             }
             .frame(width: 40, height: 40)
             .clipShape(RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.white.opacity(0.85), lineWidth: 1.5))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.white.opacity(0.85), lineWidth: 1))
+            .shadow(color: .black.opacity(0.35), radius: 0.5)
             if url.pathExtension.lowercased() == "mp4" {
                 Image(systemName: "video.fill")
                     .font(.system(size: 9))
