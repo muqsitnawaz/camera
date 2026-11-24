@@ -2,7 +2,7 @@
 # Captures real photos and videos with build/Camera.app and checks each file's size, frame rate
 # and audio. Needs a camera that does 24 and 30 fps, a microphone, and ffprobe (from ffmpeg).
 # Pass part of a camera's name to pick one; otherwise Camera's own choice is used. A second name
-# also checks picture in picture with that camera in the corner. Every capture must finish in 20 s.
+# also checks a photo saves one file per camera and a video shows that camera in the corner. Every capture must finish in 20 s.
 # Writes into ~/Pictures/Camera like the app does.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -44,9 +44,10 @@ done
 if [ -n "$SECOND" ]; then
   # The corner's light edge on a 1080x1920 frame: 4 px wide, its left side at x 709, rows 1297 to 1881.
   edge() { ffmpeg -v error -i "$1" -frames:v 1 -vf "crop=2:300:710:1440,format=gray" -f rawvideo - | od -An -tu1 -v | tr -s ' ' '\n' | sed '/^$/d' | sort -n | head -1; }
-  f=$(capture --photo --aspect 9:16 --res 1080 --second "$SECOND")
-  check "photo with $SECOND in the corner" "$(size "$f")" "1080x1920"
-  check "corner edge is drawn in the photo" "$([ "$(edge "$f")" -ge 180 ] 2>/dev/null && echo yes || echo no)" "yes"
+  # A photo is one full file per camera, the main camera's first, with no corner drawn.
+  photos=$(perl -e 'alarm 20; exec @ARGV' "$BIN" ${CAMERA_ARGS[@]+"${CAMERA_ARGS[@]}"} --photo --aspect 9:16 --res 1080 --second "$SECOND" 2>/dev/null)
+  check "photo with $SECOND saves one file per camera" "$(printf '%s\n' "$photos" | grep -c '\.jpg$')" "2"
+  while IFS= read -r f; do check "photo size of $(basename "$f")" "$(size "$f")" "1080x1920"; done <<< "$photos"
   f=$(capture --record 3 --aspect 9:16 --res 1080 --fps 30 --second "$SECOND" --mic "$MIC")
   check "video with $SECOND in the corner" "$(size "$f")" "1080x1920"
   check "corner edge is drawn in the video" "$([ "$(edge "$f")" -ge 180 ] 2>/dev/null && echo yes || echo no)" "yes"

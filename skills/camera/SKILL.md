@@ -63,7 +63,7 @@ Options for `--photo` and `--record`:
 | `--res` | `720` `1080` `1440` `2160` (the short side) | the app's setting (1080) |
 | `--fps` | `23.98` `24` `30` `60` | the app's setting (30) |
 | `--camera <name>` | part of a name from `--list` | the person's chosen camera |
-| `--second <name>` | another camera from `--list`, shown in the bottom-right corner | one camera |
+| `--second <name>` | another camera from `--list`: `--photo` saves a second file from it and prints both paths, main camera first; `--record` shows it in the bottom-right corner | one camera |
 | `--mic <name>` | part of a name from `--list`; turns sound on | the app's microphone setting (on, system default) |
 | `--rotate <degrees>` | `0` `90` `180` `270`, clockwise | that camera's saved rotation |
 | `--blur` | `soft` `strong` | the app's setting (off) |

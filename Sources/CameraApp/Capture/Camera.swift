@@ -98,6 +98,12 @@ final class Camera: NSObject, ObservableObject {
     private var insetFrame: CVPixelBuffer?
     private var insetFrameAt = Date.distantPast
     private var lastInsetReport = Date.distantPast
+    /// A photo with the corner on, waiting for one picture of its own from each camera.
+    private struct PhotoShot {
+        var main: CVPixelBuffer?, second: CVPixelBuffer?
+        let finish: (CVPixelBuffer?, CVPixelBuffer?) -> Void
+    }
+    private var photoShot: PhotoShot?
     private var insetPool: CVPixelBufferPool?
     private var insetPoolSize: CGSize = .zero
     private var recorder: Recorder?
@@ -236,7 +242,8 @@ final class Camera: NSObject, ObservableObject {
             if render.insetID != self.renderState.insetID { self.insetFrame = nil }
             self.renderState = render
         }
-        let running = running, insetShort = Int(max(Self.insetSize(render.size).width, Self.insetSize(render.size).height))
+        // The corner camera's own photo is full size, so its mode is picked for the output's short side.
+        let running = running, insetShort = Int(min(render.size.width, render.size.height))
         // After the main camera's change is queued, so a swap never opens one camera in both sessions.
         defer { sessionQueue.async { self.setInset(inset, rate: config.frameRate, short: insetShort, running: running) } }
 
@@ -315,7 +322,7 @@ final class Camera: NSObject, ObservableObject {
         }
     }
 
-    /// Session queue. The second camera's smallest mode that still fills its corner, at the chosen rate when it has it.
+    /// Session queue. The second camera's smallest mode that fills the output's short side, at the chosen rate when it has it.
     private func setInset(_ device: AVCaptureDevice?, rate: FrameRate, short: Int, running: Bool) {
         let current = insetSession.inputs.compactMap { ($0 as? AVCaptureDeviceInput)?.device }.first
         if device != insetRefused { insetRefused = nil }
@@ -476,9 +483,9 @@ final class Camera: NSObject, ObservableObject {
     // MARK: Capture
 
     /// File name tags, e.g. `cam-link-4k 9x16 1080p 30fps`.
-    private func fileTags(video: Bool) -> [String] {
+    private func fileTags(video: Bool, name: String? = nil) -> [String] {
         // "Alex’s iPhone Camera" → "iphone": no owner's name in shared files, no "camera" on every one.
-        let camera = deviceName
+        let camera = (name ?? deviceName)
             .replacingOccurrences(of: #"^\S+[’']s\s+"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\s+camera$"#, with: "", options: [.regularExpression, .caseInsensitive])
             .lowercased()
@@ -500,29 +507,46 @@ final class Camera: NSObject, ObservableObject {
         }
     }
 
-    func takePhoto(completion: @escaping (URL?) -> Void) {
+    /// With a camera in the corner, each camera saves its own full photo: two files, the main camera's first.
+    func takePhoto(completion: @escaping ([URL]) -> Void) {
         if let notReady {
             report(notReady)
-            return completion(nil)
+            return completion([])
         }
-        let url = Library.newURL(ext: "jpg", tags: fileTags(video: false))
+        let main = devices.first { $0.uniqueID == config.deviceID }
+        let second = config.secondOn && cornerLive ? devices.first { $0.uniqueID == config.secondDeviceID && $0 != main } : nil
+        let urls = [Library.newURL(ext: "jpg", tags: fileTags(video: false))]
+            + (second.map { [Library.newURL(ext: "jpg", tags: fileTags(video: false, name: $0.localizedName))] } ?? [])
         var properties: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.92]
         if let location = capturedLocation() { properties[kCGImagePropertyGPSDictionary] = location.exifGPS }
-        frameQueue.async {
-            guard let frame = self.lastFrame,
-                  let cg = self.ciContext.createCGImage(CIImage(cvPixelBuffer: frame), from: CGRect(x: 0, y: 0, width: CVPixelBufferGetWidth(frame), height: CVPixelBufferGetHeight(frame)), format: .RGBA8, colorSpace: self.colorSpace)
-            else {
-                self.report("No picture from the camera yet")
-                return DispatchQueue.main.async { completion(nil) }
-            }
-            var saved: URL?
-            if let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil) {
+        func save(_ frames: [CVPixelBuffer?]) {
+            var saved: [URL] = []
+            for (frame, url) in zip(frames, urls) {
+                guard let frame,
+                      let cg = ciContext.createCGImage(CIImage(cvPixelBuffer: frame), from: CGRect(x: 0, y: 0, width: CVPixelBufferGetWidth(frame), height: CVPixelBufferGetHeight(frame)), format: .RGBA8, colorSpace: colorSpace),
+                      let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
+                else { continue }
                 CGImageDestinationAddImage(dest, cg, properties as CFDictionary)
-                if CGImageDestinationFinalize(dest) { saved = url }
+                if CGImageDestinationFinalize(dest) { saved.append(url) }
             }
-            if saved == nil { self.report("Couldn't save the photo") }
+            if frames.first.flatMap({ $0 }) == nil { report("No picture from the camera yet") }
+            else if saved.count < urls.count { report(second.map { "Saved one photo: \($0.localizedName) sent no picture" } ?? "Couldn't save the photo") }
             DispatchQueue.main.async { completion(saved) }
         }
+        frameQueue.async {
+            guard second != nil, self.renderState.insetID == second?.uniqueID else { return save([self.lastFrame]) }
+            self.finishPhoto()  // a photo still waiting saves what it has before the next one starts
+            self.photoShot = PhotoShot(finish: { save([$0, $1]) })
+            // Saves what arrived if a camera sends nothing in time.
+            self.frameQueue.asyncAfter(deadline: .now() + 1) { self.finishPhoto() }
+        }
+    }
+
+    /// Frame queue.
+    private func finishPhoto() {
+        guard let shot = photoShot else { return }
+        photoShot = nil
+        shot.finish(shot.main, shot.second)
     }
 
     /// Start and stop both hop session queue then frame queue, so a stop never overtakes its start.
@@ -614,6 +638,10 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
         if output === insetOutput {
             guard from == renderState.insetID, let source = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
             insetFrame = renderInset(source)
+            if photoShot != nil && photoShot?.second == nil {
+                photoShot?.second = render(source, second: true)
+                if photoShot?.main != nil { finishPhoto() }
+            }
             let now = Date()
             if now.timeIntervalSince(lastInsetReport) > 0.25 {
                 lastInsetReport = now
@@ -625,6 +653,10 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
         guard from == renderState.deviceID, let source = CMSampleBufferGetImageBuffer(sampleBuffer),
               let frame = render(source) else { return }
         lastFrame = frame
+        if photoShot != nil && photoShot?.main == nil {
+            photoShot?.main = render(source, corner: false)
+            if photoShot?.second != nil { finishPhoto() }
+        }
         recorder?.append(video: frame, at: time)
         show(frame, at: time)
 
@@ -758,12 +790,14 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
         return rounded.composited(over: border).transformed(by: move).composited(over: image).cropped(to: image.extent)
     }
 
-    private func render(_ source: CVPixelBuffer) -> CVPixelBuffer? {
+    /// `second` renders the corner camera's own full picture, centred and without blur; `corner` draws the corner over the main one.
+    private func render(_ source: CVPixelBuffer, second: Bool = false, corner: Bool = true) -> CVPixelBuffer? {
         let s = renderState
         let size = s.size
         guard size.width > 0, size.height > 0 else { return nil }
-        var image = Self.place(CIImage(cvPixelBuffer: source), mirrored: s.mirrored, rotation: s.rotation, size: size, framing: s.framing)
-        if s.blur > 0 {
+        var image = Self.place(CIImage(cvPixelBuffer: source), mirrored: s.mirrored, rotation: second ? s.insetRotation : s.rotation,
+                               size: size, framing: second ? 0 : s.framing)
+        if s.blur > 0 && !second {
             // A failed frame reuses the last mask, or blurs everything, so the room never shows sharp.
             if let mask = personMask(image) { lastMask = mask }
             let background = image.clampedToExtent().applyingGaussianBlur(sigma: s.blur).cropped(to: image.extent)
@@ -775,7 +809,7 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
             lastMask = nil
         }
         // A second camera that stopped sending for a second leaves the corner rather than freezing in it.
-        if s.insetID != nil, let inset = insetFrame, Date().timeIntervalSince(insetFrameAt) < 1 {
+        if corner && !second, s.insetID != nil, let inset = insetFrame, Date().timeIntervalSince(insetFrameAt) < 1 {
             image = Self.withInset(CIImage(cvPixelBuffer: inset), over: image)
         }
         if s.exposure != 0 {

@@ -84,7 +84,11 @@ extension AppDelegate {
         let deadline = Date().addingTimeInterval(6)
         func act() {
             if photo {
-                camera.takePhoto(completion: finish)
+                // With --second, one path per camera, the main camera's first.
+                camera.takePhoto { urls in
+                    if urls.count > 1 { urls.dropLast().forEach { print($0.path) } }
+                    finish(urls.last)
+                }
             } else if let seconds {
                 camera.startRecording()
                 DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [camera] in camera.stopRecording(completion: finish) }

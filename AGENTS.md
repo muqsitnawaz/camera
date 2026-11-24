@@ -40,10 +40,12 @@ Each of these fixed a real bug. Keep them when changing the code.
   Objective-C exception Swift can't catch (this crashed on the Cam Link 4K). Set the format and
   durations again after `startRunning()` and after the mic joins, because both reset them.
 - **The second camera is drawn into the one buffer.** It has its own session, so it never pauses
-  the main picture, and its smallest mode that fills the corner. Its frames are rendered small on
-  the frame queue and drawn over the picture after the blur, so a photo or video is what the
-  preview shows. A corner that got no frame for 1 s is left out rather than frozen. It uses its own
-  saved turn and never detects one. Scripted runs show it only with `--second`.
+  the main picture, in its smallest mode that fills the output's short side. Its frames are
+  rendered small on the frame queue and drawn over the picture after the blur, so a video is what
+  the preview shows. A photo is the exception the owner asked for: each camera saves its own full
+  picture (`PhotoShot`), the main camera's file first, and whichever camera sent nothing within 1 s
+  is reported. A corner that got no frame for 1 s is left out rather than frozen. It uses its own
+  saved turn and never detects one, and no blur. Scripted runs show it only with `--second`.
 - **The microphone is in the session whenever the camera runs in Video with sound on**
   (`Config.recordsSound`, `updateMic`), so its level shows before recording. Photo never opens it.
   It joins before `startRunning()` when the popover opens in Video. Switching from Photo to Video

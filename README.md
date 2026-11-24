@@ -35,8 +35,9 @@ control in its popover is clickable.
   it to pick any connected camera by name.
 - **Two cameras at once.** The picture-in-picture button at the preview's corner puts a second
   camera in the bottom-right corner of the picture, like the iPhone's Dual Capture; right-click it
-  to pick the camera or swap the two. Photos and videos save both as you see them, and Camera
-  remembers the corner camera and whether it is on.
+  to pick the camera or swap the two. A photo saves two files, each camera's own full picture; a
+  video records the picture with the corner, as you see it. Camera remembers the corner camera and
+  whether it is on.
 - **Size and window.** ⌘+ and ⌘− make the popover larger or smaller. Drag it off, or right-click
   the menu-bar icon and pick Open in Window, for a window you can resize or make full screen.
 - **Photo or Video.** The microphone and its level meter appear in Video only. Click the mic to
@@ -142,8 +143,8 @@ error that lists the valid ones. Scripted runs never change the settings the app
 ## Testing
 
 `./scripts/test.sh [camera] [second camera]` takes real photos in every aspect and records at 24 and 30 fps, then
-checks each file's size, frame rate and sound. With a second camera it also checks that photos and
-videos show it in the corner. It needs a camera that does both rates, a
+checks each file's size, frame rate and sound. With a second camera it also checks that a photo saves
+one file per camera and a video shows it in the corner. It needs a camera that does both rates, a
 microphone, and `ffprobe` (`brew install ffmpeg`), and it saves its captures to
 `~/Pictures/Camera`.
 
