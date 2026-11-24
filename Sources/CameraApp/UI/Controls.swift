@@ -1,7 +1,7 @@
 import AVFoundation
 import SwiftUI
 
-/// The kind of camera as an icon on the preview; click it for the cameras by name and a second camera for the corner.
+/// The kind of camera as an icon on the preview; click it for the cameras by name.
 struct CameraMenu: View {
     @ObservedObject var camera: Camera
 
@@ -14,51 +14,90 @@ struct CameraMenu: View {
         }
     }
 
-    private static func name(_ device: AVCaptureDevice) -> String {
+    static func name(_ device: AVCaptureDevice) -> String {
         device.isSuspended ? "\(device.localizedName) (off: lid closed)" : device.localizedName
     }
 
     var body: some View {
         let current = camera.devices.first { $0.uniqueID == camera.config.deviceID }
-        let second = camera.devices.first { $0.uniqueID == camera.config.secondDeviceID && $0 != current }
         Menu {
-            Picker("Camera", selection: Binding(get: { camera.config.deviceID }, set: choose)) {
+            Picker("Camera", selection: Binding(get: { camera.config.deviceID }, set: { Self.choose($0, for: camera) })) {
                 ForEach(camera.devices, id: \.uniqueID) { device in
                     Label(Self.name(device), systemImage: Self.symbol(device)).tag(Optional(device.uniqueID))
                 }
             }
             .pickerStyle(.inline)
-            if camera.devices.count > 1 {
-                Picker("In the Corner", selection: $camera.config.secondDeviceID) {
-                    Text("Nothing").tag(String?.none)
-                    ForEach(camera.devices.filter { $0 != current }, id: \.uniqueID) { device in
-                        Label(Self.name(device), systemImage: Self.symbol(device)).tag(Optional(device.uniqueID))
-                    }
-                }
-                .pickerStyle(.inline)
-                if let second { Button("Swap Cameras") { choose(second.uniqueID) } }
-            }
         } label: {
-            HStack(spacing: 5) {
-                Image(systemName: Self.symbol(current))
-                if let second { Image(systemName: Self.symbol(second)).imageScale(.small).opacity(0.8) }
-            }
-            .font(.caption.weight(.semibold))
-            .overlayChip()
+            Image(systemName: Self.symbol(current))
+                .font(.caption.weight(.semibold))
+                .overlayChip()
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(camera.isRecording)
-        .help([current?.localizedName ?? "No camera", second.map { "\($0.localizedName) in the corner" }].compactMap { $0 }.joined(separator: " · "))
+        .help(current?.localizedName ?? "No camera")
     }
 
     /// Picking the camera in the corner as the main one swaps the two, in one change.
-    private func choose(_ id: String?) {
+    static func choose(_ id: String?, for camera: Camera) {
         var config = camera.config
         if id != nil && id == config.secondDeviceID { config.secondDeviceID = config.deviceID }
         config.deviceID = id
+        camera.config = config
+    }
+}
+
+/// A second camera in the picture's corner. A click turns the corner on or off, a right-click
+/// picks its camera, and both are remembered.
+struct CornerButton: View {
+    @ObservedObject var camera: Camera
+
+    var body: some View {
+        let main = camera.config.deviceID
+        let others = camera.devices.filter { $0.uniqueID != main }
+        let chosen = others.first { $0.uniqueID == camera.config.secondDeviceID }
+        let on = camera.config.secondOn && chosen != nil
+        Button(action: toggle) {
+            Image(systemName: on ? "pip.fill" : "pip")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(on ? Color.black : Color.white)
+                .frame(width: 28, height: 28)
+                .background(on ? AnyShapeStyle(Color.yellow) : AnyShapeStyle(.black.opacity(0.45)), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(others.isEmpty)
+        .help(others.isEmpty ? "Connect another camera to show it in the corner"
+              : on ? "\(chosen!.localizedName) in the corner · click to hide, right-click to pick a camera"
+              : "Show a second camera in the corner · right-click to pick one")
+        .contextMenu {
+            Picker("In the Corner", selection: Binding(get: { on ? camera.config.secondDeviceID : nil }, set: pick)) {
+                ForEach(others, id: \.uniqueID) { device in
+                    Label(CameraMenu.name(device), systemImage: CameraMenu.symbol(device)).tag(Optional(device.uniqueID))
+                }
+            }
+            .pickerStyle(.inline)
+            if on { Button("Swap Cameras") { CameraMenu.choose(chosen!.uniqueID, for: camera) } }
+        }
+    }
+
+    /// Turning it on with no camera remembered, or one that is gone, uses the first other one that is on.
+    private func toggle() {
+        var config = camera.config
+        let others = camera.devices.filter { $0.uniqueID != config.deviceID }
+        if !config.secondOn, !others.contains(where: { $0.uniqueID == config.secondDeviceID }) {
+            config.secondDeviceID = (others.first { !$0.isSuspended } ?? others.first)?.uniqueID
+        }
+        config.secondOn.toggle()
+        camera.config = config
+    }
+
+    private func pick(_ id: String?) {
+        var config = camera.config
+        config.secondDeviceID = id
+        config.secondOn = id != nil
         camera.config = config
     }
 }

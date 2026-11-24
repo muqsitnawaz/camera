@@ -68,6 +68,7 @@ extension AppDelegate {
         // No location prompt in a script, and the centred crop SKILL.md promises.
         camera.config.saveLocation = false
         camera.config.secondDeviceID = second
+        camera.config.secondOn = second != nil
         camera.config.framing = 0
         camera.config.mode = photo ? .photo : .video
 
@@ -90,9 +91,11 @@ extension AppDelegate {
             }
         }
         func poll() {
-            if camera.feed == .live {
+            if camera.feed == .live && (second == nil || camera.cornerLive) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: act)
             } else if Date() > deadline {
+                // A missing corner fails rather than saving one camera when two were asked for.
+                if second != nil && camera.feed == .live { fail("\(camera.devices.first { $0.uniqueID == second }?.localizedName ?? "the second camera"): no picture yet") }
                 act()
             } else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: poll)

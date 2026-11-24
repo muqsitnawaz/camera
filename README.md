@@ -33,9 +33,10 @@ control in its popover is clickable.
 
 - **Camera.** An icon on the preview shows the kind of camera (a camera, an iPhone, a Mac); click
   it to pick any connected camera by name.
-- **Two cameras at once.** In the same menu, In the Corner puts a second camera in the
-  bottom-right corner of the picture, like the iPhone's Dual Capture. Photos and videos save both
-  as you see them. Swap Cameras trades places; picking the corner camera as the main one does too.
+- **Two cameras at once.** The picture-in-picture button at the preview's corner puts a second
+  camera in the bottom-right corner of the picture, like the iPhone's Dual Capture; right-click it
+  to pick the camera or swap the two. Photos and videos save both as you see them, and Camera
+  remembers the corner camera and whether it is on.
 - **Size and window.** ⌘+ and ⌘− make the popover larger or smaller. Drag it off, or right-click
   the menu-bar icon and pick Open in Window, for a window you can resize or make full screen.
 - **Photo or Video.** The microphone and its level meter appear in Video only. Click the mic to

@@ -185,6 +185,7 @@ struct ContentView: View {
             }
             HStack {
                 TurnButton(camera: camera).disabled(camera.isRecording)
+                CornerButton(camera: camera).disabled(camera.isRecording)
                 Spacer()
                 Button { toggle(.effects) } label: {
                     Image(systemName: "camera.filters")

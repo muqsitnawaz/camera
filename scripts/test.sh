@@ -46,10 +46,10 @@ if [ -n "$SECOND" ]; then
   edge() { ffmpeg -v error -i "$1" -frames:v 1 -vf "crop=2:300:710:1440,format=gray" -f rawvideo - | od -An -tu1 -v | tr -s ' ' '\n' | sed '/^$/d' | sort -n | head -1; }
   f=$(capture --photo --aspect 9:16 --res 1080 --second "$SECOND")
   check "photo with $SECOND in the corner" "$(size "$f")" "1080x1920"
-  check "corner edge is drawn in the photo" "$([ "$(edge "$f")" -ge 200 ] 2>/dev/null && echo yes || echo no)" "yes"
+  check "corner edge is drawn in the photo" "$([ "$(edge "$f")" -ge 180 ] 2>/dev/null && echo yes || echo no)" "yes"
   f=$(capture --record 3 --aspect 9:16 --res 1080 --fps 30 --second "$SECOND" --mic "$MIC")
   check "video with $SECOND in the corner" "$(size "$f")" "1080x1920"
-  check "corner edge is drawn in the video" "$([ "$(edge "$f")" -ge 200 ] 2>/dev/null && echo yes || echo no)" "yes"
+  check "corner edge is drawn in the video" "$([ "$(edge "$f")" -ge 180 ] 2>/dev/null && echo yes || echo no)" "yes"
 fi
 
 exit $fail

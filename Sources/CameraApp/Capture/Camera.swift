@@ -65,6 +65,8 @@ final class Camera: NSObject, ObservableObject {
     // Session queue state.
     private var appliedMode: (device: AVCaptureDevice, format: AVCaptureDevice.Format, duration: CMTime)?
     private var appliedInset: (device: AVCaptureDevice, format: AVCaptureDevice.Format, duration: CMTime)?
+    /// A corner camera that couldn't be opened isn't tried again on every apply, only once it is picked anew.
+    private var insetRefused: AVCaptureDevice?
 
     // Frame queue state.
     private struct Render: Equatable {
@@ -95,6 +97,7 @@ final class Camera: NSObject, ObservableObject {
     /// The second camera's latest picture at its corner size; drawn only while fresh, never frozen.
     private var insetFrame: CVPixelBuffer?
     private var insetFrameAt = Date.distantPast
+    private var lastInsetReport = Date.distantPast
     private var insetPool: CVPixelBufferPool?
     private var insetPoolSize: CGSize = .zero
     private var recorder: Recorder?
@@ -107,6 +110,9 @@ final class Camera: NSObject, ObservableObject {
 
     // Main queue state: when the frame queue last reported a frame, and since when frames have been black.
     private var lastFrameSeen = Date.distantPast
+    private var lastInsetSeen = Date.distantPast
+    /// The corner camera sent a picture within the last 1.5 s.
+    var cornerLive: Bool { Date().timeIntervalSince(lastInsetSeen) < 1.5 }
     /// A dark room can read black for a moment, so the picture is called black only after 3 s of it.
     private var blackSince: Date?
     private var running = false
@@ -209,7 +215,7 @@ final class Camera: NSObject, ObservableObject {
     private func apply() {
         let config = config
         let device = devices.first { $0.uniqueID == config.deviceID }
-        let inset = devices.first { $0.uniqueID == config.secondDeviceID && $0 != device && !$0.isSuspended }
+        let inset = config.secondOn ? devices.first { $0.uniqueID == config.secondDeviceID && $0 != device && !$0.isSuspended } : nil
         let render = Render(deviceID: device?.uniqueID, size: config.outputSize, mirrored: config.mirrored, rotation: rotation,
                             framing: config.framing,
                             findsMount: persists && mountKey.map { config.rotations[$0] == nil } == true,
@@ -231,7 +237,8 @@ final class Camera: NSObject, ObservableObject {
             self.renderState = render
         }
         let running = running, insetShort = Int(max(Self.insetSize(render.size).width, Self.insetSize(render.size).height))
-        sessionQueue.async { self.setInset(inset, rate: config.frameRate, short: insetShort, running: running) }
+        // After the main camera's change is queued, so a swap never opens one camera in both sessions.
+        defer { sessionQueue.async { self.setInset(inset, rate: config.frameRate, short: insetShort, running: running) } }
 
         guard let device else {
             mode = CameraMode()
@@ -311,7 +318,8 @@ final class Camera: NSObject, ObservableObject {
     /// Session queue. The second camera's smallest mode that still fills its corner, at the chosen rate when it has it.
     private func setInset(_ device: AVCaptureDevice?, rate: FrameRate, short: Int, running: Bool) {
         let current = insetSession.inputs.compactMap { ($0 as? AVCaptureDeviceInput)?.device }.first
-        if current != device {
+        if device != insetRefused { insetRefused = nil }
+        if current != device && (device == nil || device != insetRefused) {
             insetSession.beginConfiguration()
             insetSession.inputs.forEach { insetSession.removeInput($0) }
             appliedInset = nil
@@ -319,6 +327,7 @@ final class Camera: NSObject, ObservableObject {
                 if let input = try? AVCaptureDeviceInput(device: device), insetSession.canAddInput(input) {
                     insetSession.addInput(input)
                 } else {
+                    insetRefused = device
                     report("\(device.localizedName) is in use by another app")
                 }
             }
@@ -337,7 +346,7 @@ final class Camera: NSObject, ObservableObject {
         let big = formats.filter { dims($0).short >= short }
         guard let format = big.min(by: { dims($0).area < dims($1).area }) ?? formats.max(by: { dims($0).area < dims($1).area }),
               let range = format.videoSupportedFrameRateRanges.first(where: rate.fits) ?? format.videoSupportedFrameRateRanges.first
-        else { return }
+        else { return report("\(device.localizedName) offers no video mode Camera can use") }
         let duration = min(max(rate.frameDuration, range.minFrameDuration), range.maxFrameDuration)
         if appliedInset.map({ $0.device != device || $0.format != format || $0.duration != duration }) ?? true {
             appliedInset = (device, format, duration)
@@ -605,7 +614,12 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
         if output === insetOutput {
             guard from == renderState.insetID, let source = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
             insetFrame = renderInset(source)
-            insetFrameAt = Date()
+            let now = Date()
+            if now.timeIntervalSince(lastInsetReport) > 0.25 {
+                lastInsetReport = now
+                DispatchQueue.main.async { self.lastInsetSeen = now }
+            }
+            insetFrameAt = now
             return
         }
         guard from == renderState.deviceID, let source = CMSampleBufferGetImageBuffer(sampleBuffer),
@@ -720,6 +734,7 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
               let out = makeBuffer(size, pool: &insetPool, poolSize: &insetPoolSize) else { return nil }
         let image = Self.place(CIImage(cvPixelBuffer: source), mirrored: s.mirrored, rotation: s.insetRotation, size: size, framing: 0)
         ciContext.render(image, to: out, bounds: CGRect(origin: .zero, size: size), colorSpace: colorSpace)
+        CVBufferSetAttachment(out, kCVImageBufferCGColorSpaceKey, colorSpace, .shouldPropagate)
         return out
     }
 

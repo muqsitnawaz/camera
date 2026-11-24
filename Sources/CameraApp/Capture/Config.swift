@@ -63,8 +63,10 @@ enum FrameRate: String, CaseIterable, Identifiable, Codable {
 /// Everything the person chose, applied in one place: `Camera.apply`.
 struct Config: Equatable, Codable {
     var deviceID: String?
-    /// A second camera shown in a corner of the picture, and saved with it; nil is one camera.
+    /// The camera for the corner of the picture, remembered while the corner is off.
     var secondDeviceID: String?
+    /// Shows `secondDeviceID` in the corner, in the preview and the saved file.
+    var secondOn = false
     var aspect: Aspect = .r9x16
     var landscape = false
     var resolution: Resolution = .p1080
@@ -128,6 +130,7 @@ struct Config: Equatable, Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         deviceID = try c.decodeIfPresent(String.self, forKey: .deviceID)
         secondDeviceID = try? c.decodeIfPresent(String.self, forKey: .secondDeviceID)
+        if let v = try? c.decodeIfPresent(Bool.self, forKey: .secondOn) { secondOn = v }
         if let v = try? c.decodeIfPresent(Aspect.self, forKey: .aspect) { aspect = v }
         if let wide = try? c.decodeIfPresent(Bool.self, forKey: .landscape) { landscape = wide }
         if let v = try? c.decodeIfPresent(Resolution.self, forKey: .resolution) { resolution = v }
