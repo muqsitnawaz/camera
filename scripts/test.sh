@@ -1,13 +1,15 @@
 #!/bin/bash
 # Captures real photos and videos with build/Camera.app and checks each file's size, frame rate
 # and audio. Needs a camera that does 24 and 30 fps, a microphone, and ffprobe (from ffmpeg).
-# Pass part of a camera's name to pick one; otherwise Camera's own choice is used. Every capture
-# must finish in 20 s. Writes into ~/Pictures/Camera like the app does.
+# Pass part of a camera's name to pick one; otherwise Camera's own choice is used. A second name
+# also checks picture in picture with that camera in the corner. Every capture must finish in 20 s.
+# Writes into ~/Pictures/Camera like the app does.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 command -v ffprobe >/dev/null || { echo "test.sh needs ffprobe: brew install ffmpeg"; exit 1; }
 CAMERA_ARGS=()
 [ $# -gt 0 ] && CAMERA_ARGS=(--camera "$1")
+SECOND=${2:-}
 BIN=build/Camera.app/Contents/MacOS/Camera
 ./scripts/build.sh >/dev/null || exit 1  # never test a stale app
 fail=0
@@ -38,5 +40,16 @@ for fps in 24 30; do
   check "video has audio at $fps fps" "$(ffprobe -v error -select_streams a -show_entries stream=codec_name -of csv=p=0 "$f" 2>/dev/null)" "aac"
   check "video color tags at $fps fps" "$(ffprobe -v error -select_streams v -show_entries stream=color_space,color_transfer,color_primaries -of csv=p=0 "$f" 2>/dev/null)" "bt709,iec61966-2-1,bt709"
 done
+
+if [ -n "$SECOND" ]; then
+  # The corner's light edge on a 1080x1920 frame: 4 px wide, its left side at x 709, rows 1297 to 1881.
+  edge() { ffmpeg -v error -i "$1" -frames:v 1 -vf "crop=2:300:710:1440,format=gray" -f rawvideo - | od -An -tu1 -v | tr -s ' ' '\n' | sed '/^$/d' | sort -n | head -1; }
+  f=$(capture --photo --aspect 9:16 --res 1080 --second "$SECOND")
+  check "photo with $SECOND in the corner" "$(size "$f")" "1080x1920"
+  check "corner edge is drawn in the photo" "$([ "$(edge "$f")" -ge 200 ] 2>/dev/null && echo yes || echo no)" "yes"
+  f=$(capture --record 3 --aspect 9:16 --res 1080 --fps 30 --second "$SECOND" --mic "$MIC")
+  check "video with $SECOND in the corner" "$(size "$f")" "1080x1920"
+  check "corner edge is drawn in the video" "$([ "$(edge "$f")" -ge 200 ] 2>/dev/null && echo yes || echo no)" "yes"
+fi
 
 exit $fail

@@ -17,7 +17,7 @@ extension AppDelegate {
             fail("\(flag) takes \(expected)")
         }
         // A mistyped flag such as --phot must fail, not open the app or capture with defaults.
-        let known: Set = ["--list", "--photo", "--record", "--aspect", "--res", "--fps", "--camera", "--mic", "--rotate", "--blur", "--brighten"]
+        let known: Set = ["--list", "--photo", "--record", "--aspect", "--res", "--fps", "--camera", "--second", "--mic", "--rotate", "--blur", "--brighten"]
         if let unknown = args.dropFirst().first(where: { $0.hasPrefix("--") && !known.contains($0) }) {
             fail("unknown option \(unknown); the options are \(known.sorted().joined(separator: " "))")
         }
@@ -36,14 +36,19 @@ extension AppDelegate {
             camera.config.aspect = aspect
             camera.config.landscape = landscape
         }
-        if let name = name("--camera") {
+        func device(_ flag: String) -> String? {
+            guard let name = name(flag) else { return nil }
             let wanted = name.lowercased()
             let names = camera.devices.map { ($0, $0.localizedName.lowercased()) }
             guard let device = (names.first(where: { $0.1.hasPrefix(wanted) }) ?? names.first(where: { $0.1.contains(wanted) }))?.0 else {
                 fail("no camera matching \(name); --list shows them")
             }
-            camera.config.deviceID = device.uniqueID
+            return device.uniqueID
         }
+        if let id = device("--camera") { camera.config.deviceID = id }
+        // One camera unless --second names another for the corner.
+        let second = device("--second")
+        if second != nil && second == camera.config.deviceID { fail("--second names the same camera as --camera") }
         if let name = name("--mic")?.lowercased() {
             guard let mic = camera.mics.first(where: { $0.localizedName.lowercased().contains(name) }) else {
                 fail("no microphone matching \(name); --list shows them")
@@ -62,6 +67,7 @@ extension AppDelegate {
         }
         // No location prompt in a script, and the centred crop SKILL.md promises.
         camera.config.saveLocation = false
+        camera.config.secondDeviceID = second
         camera.config.framing = 0
         camera.config.mode = photo ? .photo : .video
 

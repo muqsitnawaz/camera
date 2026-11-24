@@ -33,6 +33,9 @@ control in its popover is clickable.
 
 - **Camera.** An icon on the preview shows the kind of camera (a camera, an iPhone, a Mac); click
   it to pick any connected camera by name.
+- **Two cameras at once.** In the same menu, In the Corner puts a second camera in the
+  bottom-right corner of the picture, like the iPhone's Dual Capture. Photos and videos save both
+  as you see them. Swap Cameras trades places; picking the corner camera as the main one does too.
 - **Size and window.** ⌘+ and ⌘− make the popover larger or smaller. Drag it off, or right-click
   the menu-bar icon and pick Open in Window, for a window you can resize or make full screen.
 - **Photo or Video.** The microphone and its level meter appear in Video only. Click the mic to
@@ -131,14 +134,15 @@ $BB --record 5 --aspect 9:16 --res 1080 --fps 24 --camera "cam link" --mic scarl
 
 `--aspect` takes either orientation (`9:16` or `16:9`), and `--rotate 90` turns the picture.
 `--blur soft` (or `strong`) blurs the background and `--brighten more` (or `most`) lifts a dim room.
-`--camera` and `--mic` match part of a device's name. An unknown option or invalid value is an
+`--camera`, `--second` (a camera for the corner) and `--mic` match part of a device's name. An unknown option or invalid value is an
 error that lists the valid ones. Scripted runs never change the settings the app remembers. The full reference is in
 [`skills/camera/SKILL.md`](skills/camera/SKILL.md).
 
 ## Testing
 
-`./scripts/test.sh [camera]` takes real photos in every aspect and records at 24 and 30 fps, then
-checks each file's size, frame rate and sound. It needs a camera that does both rates, a
+`./scripts/test.sh [camera] [second camera]` takes real photos in every aspect and records at 24 and 30 fps, then
+checks each file's size, frame rate and sound. With a second camera it also checks that photos and
+videos show it in the corner. It needs a camera that does both rates, a
 microphone, and `ffprobe` (`brew install ffmpeg`), and it saves its captures to
 `~/Pictures/Camera`.
 

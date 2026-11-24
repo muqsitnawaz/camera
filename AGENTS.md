@@ -16,7 +16,7 @@ by `scripts/build.sh` (no Xcode project). To *use* the app from an agent, read
 | `Sources/CameraApp/Capture/Library.swift` | `~/Pictures/Camera`: file names, the recent-captures list |
 | `Sources/CameraApp/Capture/Location.swift` | Location for the Location setting, and its EXIF and ISO 6709 forms |
 | `Sources/CameraApp/UI/ContentView.swift` | The popover: preview and its overlays, aspect and mode, shutter row with the last capture |
-| `Sources/CameraApp/UI/Controls.swift` | The camera menu, aspect picker, Camera Settings panel and effects tray |
+| `Sources/CameraApp/UI/Controls.swift` | The camera menu (main and corner camera), aspect picker, Camera Settings panel and effects tray |
 | `Sources/CameraApp/UI/CaptureViewer.swift` | Viewing a photo or playing a video in place, laid out like Photos |
 | `Sources/CameraApp/UI/Components.swift` | Shutter, level meter, recording badge, thumbnail, preview layer |
 | `Sources/CameraApp/UI/RingLight.swift` | The screen-edge ring light windows |
@@ -39,6 +39,11 @@ Each of these fixed a real bug. Keep them when changing the code.
 - **Frame duration is clamped to the format's range.** An out-of-range duration raises an
   Objective-C exception Swift can't catch (this crashed on the Cam Link 4K). Set the format and
   durations again after `startRunning()` and after the mic joins, because both reset them.
+- **The second camera is drawn into the one buffer.** It has its own session, so it never pauses
+  the main picture, and its smallest mode that fills the corner. Its frames are rendered small on
+  the frame queue and drawn over the picture after the blur, so a photo or video is what the
+  preview shows. A corner that got no frame for 1 s is left out rather than frozen. It uses its own
+  saved turn and never detects one. Scripted runs show it only with `--second`.
 - **The microphone is in the session whenever the camera runs in Video with sound on**
   (`Config.recordsSound`, `updateMic`), so its level shows before recording. Photo never opens it.
   It joins before `startRunning()` when the popover opens in Video. Switching from Photo to Video
@@ -73,7 +78,7 @@ Builds prove nothing about a camera app. Before calling a change done:
 
 ```sh
 ./scripts/build.sh                      # universal app in build/
-./scripts/test.sh [camera]              # real captures: sizes, frame rates, sound (needs ffprobe)
+./scripts/test.sh [camera] [second]     # real captures: sizes, frame rates, sound, the corner (needs ffprobe)
 build/Camera.app/Contents/MacOS/Camera --list
 ```
 

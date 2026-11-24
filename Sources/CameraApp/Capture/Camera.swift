@@ -51,6 +51,9 @@ final class Camera: NSObject, ObservableObject {
 
     private let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
+    /// The second camera runs in its own session, so it can never stall or pause the main picture.
+    private let insetSession = AVCaptureSession()
+    private let insetOutput = AVCaptureVideoDataOutput()
     private let audioOutput = AVCaptureAudioDataOutput()
     /// Session inputs and the camera's format are only touched on this queue.
     private let sessionQueue = DispatchQueue(label: "camera.session")
@@ -61,6 +64,7 @@ final class Camera: NSObject, ObservableObject {
 
     // Session queue state.
     private var appliedMode: (device: AVCaptureDevice, format: AVCaptureDevice.Format, duration: CMTime)?
+    private var appliedInset: (device: AVCaptureDevice, format: AVCaptureDevice.Format, duration: CMTime)?
 
     // Frame queue state.
     private struct Render: Equatable {
@@ -70,6 +74,9 @@ final class Camera: NSObject, ObservableObject {
         var findsMount = false
         /// Stops of exposure added, and the background blur radius in output pixels; 0 is off.
         var exposure = 0.0, blur = 0.0
+        /// The second camera drawn in the corner, and its saved turn.
+        var insetID: String?
+        var insetRotation = 0
     }
     private var renderState = Render(deviceID: nil, size: .zero, mirrored: true, rotation: 0)
     private let segmentation: VNGeneratePersonSegmentationRequest = {
@@ -85,6 +92,11 @@ final class Camera: NSObject, ObservableObject {
     private var pool: CVPixelBufferPool?
     private var poolSize: CGSize = .zero
     private var lastFrame: CVPixelBuffer?
+    /// The second camera's latest picture at its corner size; drawn only while fresh, never frozen.
+    private var insetFrame: CVPixelBuffer?
+    private var insetFrameAt = Date.distantPast
+    private var insetPool: CVPixelBufferPool?
+    private var insetPoolSize: CGSize = .zero
     private var recorder: Recorder?
     private var lastReport = Date.distantPast
     private var lastMountCheck = Date.distantPast
@@ -130,6 +142,10 @@ final class Camera: NSObject, ObservableObject {
         ]
         audioOutput.setSampleBufferDelegate(self, queue: frameQueue)
         if session.canAddOutput(audioOutput) { session.addOutput(audioOutput) }
+        insetOutput.videoSettings = videoOutput.videoSettings
+        insetOutput.alwaysDiscardsLateVideoFrames = true
+        insetOutput.setSampleBufferDelegate(self, queue: frameQueue)
+        if insetSession.canAddOutput(insetOutput) { insetSession.addOutput(insetOutput) }
 
         let nc = NotificationCenter.default
         for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification] {
@@ -193,10 +209,12 @@ final class Camera: NSObject, ObservableObject {
     private func apply() {
         let config = config
         let device = devices.first { $0.uniqueID == config.deviceID }
+        let inset = devices.first { $0.uniqueID == config.secondDeviceID && $0 != device && !$0.isSuspended }
         let render = Render(deviceID: device?.uniqueID, size: config.outputSize, mirrored: config.mirrored, rotation: rotation,
                             framing: config.framing,
                             findsMount: persists && mountKey.map { config.rotations[$0] == nil } == true,
-                            exposure: config.brighten.stops, blur: config.blur.radius * Double(config.resolution.rawValue) / 1080)
+                            exposure: config.brighten.stops, blur: config.blur.radius * Double(config.resolution.rawValue) / 1080,
+                            insetID: inset?.uniqueID, insetRotation: inset.flatMap { config.rotations[Self.mountKey($0)] } ?? 0)
         updateMic()
         updateLocation()
         if device?.uniqueID != appliedDeviceID {
@@ -209,8 +227,11 @@ final class Camera: NSObject, ObservableObject {
                 self.lastFrame = nil  // a photo must never be a frame from before the change
             }
             if render.deviceID != self.renderState.deviceID { self.mountQueue.async { self.mountVotes = [] } }
+            if render.insetID != self.renderState.insetID { self.insetFrame = nil }
             self.renderState = render
         }
+        let running = running, insetShort = Int(max(Self.insetSize(render.size).width, Self.insetSize(render.size).height))
+        sessionQueue.async { self.setInset(inset, rate: config.frameRate, short: insetShort, running: running) }
 
         guard let device else {
             mode = CameraMode()
@@ -287,6 +308,61 @@ final class Camera: NSObject, ObservableObject {
         }
     }
 
+    /// Session queue. The second camera's smallest mode that still fills its corner, at the chosen rate when it has it.
+    private func setInset(_ device: AVCaptureDevice?, rate: FrameRate, short: Int, running: Bool) {
+        let current = insetSession.inputs.compactMap { ($0 as? AVCaptureDeviceInput)?.device }.first
+        if current != device {
+            insetSession.beginConfiguration()
+            insetSession.inputs.forEach { insetSession.removeInput($0) }
+            appliedInset = nil
+            if let device {
+                if let input = try? AVCaptureDeviceInput(device: device), insetSession.canAddInput(input) {
+                    insetSession.addInput(input)
+                } else {
+                    report("\(device.localizedName) is in use by another app")
+                }
+            }
+            insetSession.commitConfiguration()
+        }
+        guard let device, !insetSession.inputs.isEmpty else {
+            if insetSession.isRunning { insetSession.stopRunning() }
+            return
+        }
+        func dims(_ f: AVCaptureDevice.Format) -> (short: Int, area: Int) {
+            let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
+            return (Int(min(d.width, d.height)), Int(d.width) * Int(d.height))
+        }
+        let atRate = device.formats.filter { $0.videoSupportedFrameRateRanges.contains(where: rate.fits) }
+        let formats = atRate.isEmpty ? device.formats : atRate
+        let big = formats.filter { dims($0).short >= short }
+        guard let format = big.min(by: { dims($0).area < dims($1).area }) ?? formats.max(by: { dims($0).area < dims($1).area }),
+              let range = format.videoSupportedFrameRateRanges.first(where: rate.fits) ?? format.videoSupportedFrameRateRanges.first
+        else { return }
+        let duration = min(max(rate.frameDuration, range.minFrameDuration), range.maxFrameDuration)
+        if appliedInset.map({ $0.device != device || $0.format != format || $0.duration != duration }) ?? true {
+            appliedInset = (device, format, duration)
+            applyInsetMode()
+        }
+        if running && !insetSession.isRunning {
+            insetSession.startRunning()
+            applyInsetMode()
+        }
+    }
+
+    /// Session queue. Like `applyMode`, again after every start.
+    private func applyInsetMode() {
+        guard let m = appliedInset, insetSession.inputs.contains(where: { ($0 as? AVCaptureDeviceInput)?.device == m.device }) else { return }
+        do {
+            try m.device.lockForConfiguration()
+            m.device.activeFormat = m.format
+            m.device.activeVideoMinFrameDuration = m.duration
+            m.device.activeVideoMaxFrameDuration = m.duration
+            m.device.unlockForConfiguration()
+        } catch {
+            report("Couldn't set up \(m.device.localizedName): \(error.localizedDescription)")
+        }
+    }
+
     // MARK: Session
 
     func start() {
@@ -303,6 +379,10 @@ final class Camera: NSObject, ObservableObject {
             sessionQueue.async {
                 self.session.startRunning()
                 self.applyMode()
+                if !self.insetSession.inputs.isEmpty {
+                    self.insetSession.startRunning()
+                    self.applyInsetMode()
+                }
             }
             healthTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.updateFeed() }
         case .notDetermined:
@@ -326,8 +406,11 @@ final class Camera: NSObject, ObservableObject {
         feed = .off
         updateMic()
         updateLocation()
-        sessionQueue.async { self.session.stopRunning() }
-        frameQueue.async { self.lastFrame = nil }
+        sessionQueue.async {
+            self.session.stopRunning()
+            self.insetSession.stopRunning()
+        }
+        frameQueue.async { self.lastFrame = nil; self.insetFrame = nil }
     }
 
     /// Main queue. Judged from frames that arrive: a connected camera can send nothing or black.
@@ -519,6 +602,12 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
         }
         // A frame still in flight from the camera before a switch is not this camera's picture.
         let from = (connection.inputPorts.first?.input as? AVCaptureDeviceInput)?.device.uniqueID
+        if output === insetOutput {
+            guard from == renderState.insetID, let source = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+            insetFrame = renderInset(source)
+            insetFrameAt = Date()
+            return
+        }
         guard from == renderState.deviceID, let source = CMSampleBufferGetImageBuffer(sampleBuffer),
               let frame = render(source) else { return }
         lastFrame = frame
@@ -578,48 +667,35 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
         return true
     }
 
-    private func render(_ source: CVPixelBuffer) -> CVPixelBuffer? {
-        let s = renderState
-        let size = s.size
-        guard size.width > 0, size.height > 0 else { return nil }
-        let sourceImage = CIImage(cvPixelBuffer: source)
-        // Mirror, then turn, then cut the aspect, so a sideways camera is upright before the crop.
-        func place(_ input: CIImage) -> CIImage {
-            var image = input
-            if s.mirrored {
-                image = image.transformed(by: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: image.extent.width, ty: 0))
-            }
-            switch s.rotation {
-            case 90: image = image.oriented(.right)
-            case 180: image = image.oriented(.down)
-            case 270: image = image.oriented(.left)
-            default: break
-            }
-            image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
+    /// Mirror, then turn, then cut the aspect, so a sideways camera is upright before the crop.
+    private static func place(_ input: CIImage, mirrored: Bool, rotation: Int, size: CGSize, framing: Double) -> CIImage {
+        var image = input
+        if mirrored {
+            image = image.transformed(by: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: image.extent.width, ty: 0))
+        }
+        switch rotation {
+        case 90: image = image.oriented(.right)
+        case 180: image = image.oriented(.down)
+        case 270: image = image.oriented(.left)
+        default: break
+        }
+        image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
 
-            let crop = Config.crop(image.extent, ratio: size.width / size.height, framing: s.framing)
-            let scale = size.width / crop.width
-            return image.cropped(to: crop)
-                .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
-                .samplingLinear()
-                .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        }
-        var image = place(sourceImage)
-        if s.blur > 0 {
-            // A failed frame reuses the last mask, or blurs everything, so the room never shows sharp.
-            if let mask = personMask(image) { lastMask = mask }
-            let background = image.clampedToExtent().applyingGaussianBlur(sigma: s.blur).cropped(to: image.extent)
-            image = lastMask.map { image.applyingFilter("CIBlendWithMask", parameters: [
-                kCIInputBackgroundImageKey: background,
-                kCIInputMaskImageKey: $0,
-            ]) } ?? background
-        } else {
-            lastMask = nil
-        }
-        if s.exposure != 0 {
-            image = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: s.exposure])
-        }
+        let crop = Config.crop(image.extent, ratio: size.width / size.height, framing: framing)
+        let scale = size.width / crop.width
+        return image.cropped(to: crop)
+            .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
+            .samplingLinear()
+            .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    }
 
+    /// The second camera's corner: the output's shape at under a third of its size, both sides even.
+    static func insetSize(_ size: CGSize) -> CGSize {
+        CGSize(width: (size.width * 0.15).rounded() * 2, height: (size.height * 0.15).rounded() * 2)
+    }
+
+    /// Frame queue. A buffer of `size` from `pool`, made again when the size changes.
+    private func makeBuffer(_ size: CGSize, pool: inout CVPixelBufferPool?, poolSize: inout CGSize) -> CVPixelBuffer? {
         if pool == nil || poolSize != size {
             let attrs: [String: Any] = [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
@@ -634,7 +710,64 @@ extension Camera: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDa
         guard let pool else { return nil }
         var out: CVPixelBuffer?
         CVPixelBufferPoolCreatePixelBuffer(nil, pool, &out)
-        guard let out else { return nil }
+        return out
+    }
+
+    /// Frame queue. Rendered into its own small buffer, so the camera's buffer goes straight back to it.
+    private func renderInset(_ source: CVPixelBuffer) -> CVPixelBuffer? {
+        let s = renderState, size = Self.insetSize(s.size)
+        guard size.width > 0, size.height > 0,
+              let out = makeBuffer(size, pool: &insetPool, poolSize: &insetPoolSize) else { return nil }
+        let image = Self.place(CIImage(cvPixelBuffer: source), mirrored: s.mirrored, rotation: s.insetRotation, size: size, framing: 0)
+        ciContext.render(image, to: out, bounds: CGRect(origin: .zero, size: size), colorSpace: colorSpace)
+        return out
+    }
+
+    /// The second camera in the bottom-right corner, rounded, with a thin light edge to set it apart.
+    private static func withInset(_ inset: CIImage, over image: CIImage) -> CIImage {
+        let short = min(image.extent.width, image.extent.height)
+        let margin = (short * 0.04).rounded(), edge = max(2, (short * 0.004).rounded())
+        let frame = inset.extent, radius = min(frame.width, frame.height) * 0.1
+        func roundedRect(_ rect: CGRect, radius: CGFloat, color: CIColor) -> CIImage {
+            CIFilter(name: "CIRoundedRectangleGenerator", parameters: [
+                "inputExtent": CIVector(cgRect: rect), "inputRadius": radius, "inputColor": color,
+            ])?.outputImage ?? CIImage(color: color).cropped(to: rect)
+        }
+        let rounded = inset.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: CIImage(color: .clear).cropped(to: frame),
+            kCIInputMaskImageKey: roundedRect(frame, radius: radius, color: .white),
+        ])
+        let border = roundedRect(frame.insetBy(dx: -edge, dy: -edge), radius: radius + edge, color: CIColor(red: 1, green: 1, blue: 1, alpha: 0.85))
+        // Core Image's y grows upward, so the bottom margin is the origin's y.
+        let move = CGAffineTransform(translationX: image.extent.maxX - frame.width - margin, y: image.extent.minY + margin)
+        return rounded.composited(over: border).transformed(by: move).composited(over: image).cropped(to: image.extent)
+    }
+
+    private func render(_ source: CVPixelBuffer) -> CVPixelBuffer? {
+        let s = renderState
+        let size = s.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        var image = Self.place(CIImage(cvPixelBuffer: source), mirrored: s.mirrored, rotation: s.rotation, size: size, framing: s.framing)
+        if s.blur > 0 {
+            // A failed frame reuses the last mask, or blurs everything, so the room never shows sharp.
+            if let mask = personMask(image) { lastMask = mask }
+            let background = image.clampedToExtent().applyingGaussianBlur(sigma: s.blur).cropped(to: image.extent)
+            image = lastMask.map { image.applyingFilter("CIBlendWithMask", parameters: [
+                kCIInputBackgroundImageKey: background,
+                kCIInputMaskImageKey: $0,
+            ]) } ?? background
+        } else {
+            lastMask = nil
+        }
+        // A second camera that stopped sending for a second leaves the corner rather than freezing in it.
+        if s.insetID != nil, let inset = insetFrame, Date().timeIntervalSince(insetFrameAt) < 1 {
+            image = Self.withInset(CIImage(cvPixelBuffer: inset), over: image)
+        }
+        if s.exposure != 0 {
+            image = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: s.exposure])
+        }
+
+        guard let out = makeBuffer(size, pool: &pool, poolSize: &poolSize) else { return nil }
         ciContext.render(image, to: out, bounds: CGRect(origin: .zero, size: size), colorSpace: colorSpace)
         // Untagged, the preview layer shows these bytes in each display's own colors, oversaturated and banded.
         CVBufferSetAttachment(out, kCVImageBufferCGColorSpaceKey, colorSpace, .shouldPropagate)
